@@ -1,0 +1,67 @@
+// Prisma schema for Should Costing Agent
+// Run: npx prisma migrate dev --name init
+// Then: npx prisma db seed
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model MaterialPrice {
+  id           String                      @id @default(uuid())
+  materialName String
+  pricePerUnit Decimal
+  unit         String                      // e.g., "kg", "meter", "piece", "board_foot"
+  supplier     String?
+  currency     String                      @default("USD")
+  lastUpdated  DateTime                    @default(now())
+  embedding    Unsupported("vector(768)")?
+
+  @@index([materialName])
+}
+
+model LaborRate {
+  id          String                      @id @default(uuid())
+  processType String                      // e.g., "assembly", "welding", "machining", "finishing"
+  region      String
+  hourlyRate  Decimal
+  skillLevel  SkillLevel
+  lastUpdated DateTime                    @default(now())
+  embedding   Unsupported("vector(768)")?
+
+  @@index([processType, region])
+}
+
+model HistoricalCost {
+  id                 String                      @id @default(uuid())
+  productName        String
+  productDescription String
+  totalCost          Decimal
+  breakdown          Json                        // stores full cost breakdown
+  createdAt          DateTime                    @default(now())
+  userId             String?
+  embedding          Unsupported("vector(768)")?
+
+  @@index([productName])
+}
+
+model ProductComponent {
+  id            String  @id @default(uuid())
+  productId     String
+  componentName String
+  material      String
+  quantity      Decimal
+  unit          String
+  
+  @@index([productId])
+}
+
+enum SkillLevel {
+  entry
+  intermediate
+  expert
+}
