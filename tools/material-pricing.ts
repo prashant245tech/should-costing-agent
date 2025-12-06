@@ -1,4 +1,9 @@
-import { findMaterialPrice, findAllMaterialPrices, MaterialPrice } from "@/lib/db";
+import {
+  findMaterialPrice,
+  findAllMaterialPrices,
+  searchMaterials as dbSearchMaterials,
+  MaterialPrice,
+} from "@/lib/db";
 
 export interface MaterialPriceResult {
   found: boolean;
@@ -7,15 +12,20 @@ export interface MaterialPriceResult {
   unit?: string;
   currency?: string;
   message: string;
+  similarityScore?: number;
 }
 
-export function getMaterialPrice(
+/**
+ * Get price for a specific material using semantic search
+ * Falls back to AI estimate if not found
+ */
+export async function getMaterialPrice(
   materialName: string,
   quantity: number = 1,
   unit?: string
-): MaterialPriceResult {
-  const material = findMaterialPrice(materialName);
-  
+): Promise<MaterialPriceResult> {
+  const material = await findMaterialPrice(materialName);
+
   if (material) {
     const totalCost = quantity * material.pricePerUnit;
     return {
@@ -35,16 +45,23 @@ export function getMaterialPrice(
   };
 }
 
-export function listAllMaterials(): MaterialPrice[] {
+/**
+ * List all materials in the database
+ */
+export async function listAllMaterials(): Promise<MaterialPrice[]> {
   return findAllMaterialPrices();
 }
 
-export function searchMaterials(query: string): MaterialPrice[] {
-  const allMaterials = findAllMaterialPrices();
-  const searchTerm = query.toLowerCase();
-  
-  return allMaterials.filter(m => 
-    m.materialName.toLowerCase().includes(searchTerm) ||
-    searchTerm.includes(m.materialName.toLowerCase())
-  );
+/**
+ * Search materials using semantic search
+ * Returns materials matching the query by meaning, not just substring
+ */
+export async function searchMaterials(
+  query: string,
+  limit: number = 10
+): Promise<MaterialPrice[]> {
+  return dbSearchMaterials(query, limit);
 }
+
+// Re-export types
+export type { MaterialPrice };

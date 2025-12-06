@@ -1,4 +1,9 @@
-import { searchSimilarProducts, findAllHistoricalCosts, HistoricalCost } from "@/lib/db";
+import {
+  searchSimilarProducts,
+  searchHistoricalCosts,
+  findAllHistoricalCosts,
+  HistoricalCost,
+} from "@/lib/db";
 
 export interface SimilarProductResult {
   found: boolean;
@@ -11,19 +16,24 @@ export interface SimilarProductResult {
   message: string;
 }
 
-export function findSimilarProducts(productDescription: string): SimilarProductResult {
-  const similar = searchSimilarProducts(productDescription);
-  
+/**
+ * Find similar products using semantic search
+ */
+export async function findSimilarProducts(
+  productDescription: string
+): Promise<SimilarProductResult> {
+  const similar = await searchSimilarProducts(productDescription);
+
   if (similar.length > 0) {
     return {
       found: true,
-      products: similar.map(p => ({
+      products: similar.map((p) => ({
         name: p.productName,
         description: p.productDescription,
         totalCost: p.totalCost,
         createdAt: p.createdAt,
       })),
-      message: `Found ${similar.length} similar product(s) for comparison.`,
+      message: `Found ${similar.length} similar product(s) for comparison using semantic search.`,
     };
   }
 
@@ -34,21 +44,37 @@ export function findSimilarProducts(productDescription: string): SimilarProductR
   };
 }
 
-export function getAllHistoricalCosts(): HistoricalCost[] {
+/**
+ * Search historical costs using semantic search
+ */
+export async function searchProducts(
+  query: string,
+  limit: number = 10
+): Promise<HistoricalCost[]> {
+  return searchHistoricalCosts(query, limit);
+}
+
+/**
+ * Get all historical costs
+ */
+export async function getAllHistoricalCosts(): Promise<HistoricalCost[]> {
   return findAllHistoricalCosts();
 }
 
-export function compareWithHistorical(
+/**
+ * Compare estimated cost with historical similar products
+ */
+export async function compareWithHistorical(
   productDescription: string,
   estimatedCost: number
-): {
+): Promise<{
   similar: HistoricalCost[];
   averageSimilarCost: number;
   percentageDifference: number;
   message: string;
-} {
-  const similar = searchSimilarProducts(productDescription);
-  
+}> {
+  const similar = await searchSimilarProducts(productDescription);
+
   if (similar.length === 0) {
     return {
       similar: [],
@@ -77,3 +103,6 @@ export function compareWithHistorical(
     message: comparisonMessage,
   };
 }
+
+// Re-export types
+export type { HistoricalCost };

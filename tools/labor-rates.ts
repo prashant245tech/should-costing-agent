@@ -1,4 +1,10 @@
-import { findLaborRate, findAllLaborRates, LaborRate, SkillLevel } from "@/lib/db";
+import {
+  findLaborRate,
+  findAllLaborRates,
+  searchLaborRates as dbSearchLaborRates,
+  LaborRate,
+  SkillLevel,
+} from "@/lib/db";
 
 export interface LaborRateResult {
   found: boolean;
@@ -9,13 +15,16 @@ export interface LaborRateResult {
   message: string;
 }
 
-export function getLaborRate(
+/**
+ * Get labor rate for a process type using semantic search
+ */
+export async function getLaborRate(
   processType: string,
   skillLevel: SkillLevel = "intermediate",
   region: string = "US"
-): LaborRateResult {
-  const rate = findLaborRate(processType, skillLevel, region);
-  
+): Promise<LaborRateResult> {
+  const rate = await findLaborRate(processType, skillLevel, region);
+
   if (rate) {
     return {
       found: true,
@@ -27,25 +36,6 @@ export function getLaborRate(
     };
   }
 
-  // Try to find any matching process type
-  const allRates = findAllLaborRates();
-  const searchTerm = processType.toLowerCase();
-  const partialMatch = allRates.find(r => 
-    r.processType.toLowerCase().includes(searchTerm) ||
-    searchTerm.includes(r.processType.toLowerCase())
-  );
-
-  if (partialMatch) {
-    return {
-      found: true,
-      processType: partialMatch.processType,
-      hourlyRate: partialMatch.hourlyRate,
-      skillLevel: partialMatch.skillLevel,
-      region: partialMatch.region,
-      message: `Found similar: ${partialMatch.processType} (${partialMatch.skillLevel}): $${partialMatch.hourlyRate.toFixed(2)}/hour`,
-    };
-  }
-
   return {
     found: false,
     processType,
@@ -53,22 +43,41 @@ export function getLaborRate(
   };
 }
 
-export function listAllLaborRates(): LaborRate[] {
+/**
+ * List all labor rates in the database
+ */
+export async function listAllLaborRates(): Promise<LaborRate[]> {
   return findAllLaborRates();
 }
 
-export function getProcessTypes(): string[] {
-  const rates = findAllLaborRates();
-  return [...new Set(rates.map(r => r.processType))];
+/**
+ * Search labor rates using semantic search
+ */
+export async function searchLaborRates(
+  query: string,
+  limit: number = 10
+): Promise<LaborRate[]> {
+  return dbSearchLaborRates(query, limit);
 }
 
-export function calculateLaborCost(
+/**
+ * Get unique process types from the database
+ */
+export async function getProcessTypes(): Promise<string[]> {
+  const rates = await findAllLaborRates();
+  return [...new Set(rates.map((r) => r.processType))];
+}
+
+/**
+ * Calculate total labor cost for a process
+ */
+export async function calculateLaborCost(
   processType: string,
   hours: number,
   skillLevel: SkillLevel = "intermediate",
   region: string = "US"
-): { hourlyRate: number; totalCost: number; message: string } {
-  const result = getLaborRate(processType, skillLevel, region);
+): Promise<{ hourlyRate: number; totalCost: number; message: string }> {
+  const result = await getLaborRate(processType, skillLevel, region);
   const hourlyRate = result.hourlyRate || 35; // Default rate
   const totalCost = hours * hourlyRate;
 
@@ -78,3 +87,6 @@ export function calculateLaborCost(
     message: `${hours} hours × $${hourlyRate.toFixed(2)}/hr = $${totalCost.toFixed(2)}`,
   };
 }
+
+// Re-export types
+export type { LaborRate, SkillLevel };

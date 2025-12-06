@@ -13,6 +13,7 @@ import { MaterialsBreakdown } from "@/components/materials-breakdown";
 import { LaborEstimates } from "@/components/labor-estimates";
 import { OverheadAnalysis } from "@/components/overhead-analysis";
 import { FinalReport } from "@/components/final-report";
+import { OverviewGrid } from "@/components/overview-grid";
 import {
   Search,
   Package,
@@ -20,6 +21,9 @@ import {
   Building2,
   FileText,
   Loader2,
+  Sparkles,
+  ArrowRight,
+  Copy,
 } from "lucide-react";
 
 // Define the state type inline to avoid import issues
@@ -147,15 +151,38 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
 
   // Show initial state
   if (!productDescription) {
+    const examples = [
+      "Wooden Dining Table for 6",
+      "Steel Industrial Bracket",
+      "Wireless Gaming Mouse",
+      "Cotton T-Shirt with Print"
+    ];
+
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="text-center py-12">
-            <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Start Your Cost Analysis</h3>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              Describe the product you want to cost in the chat. For example:
-              &ldquo;I want to cost a wooden dining table that seats 6 people&rdquo;
+      <Card className="border-2 border-dashed border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+        <CardContent className="pt-12 pb-12">
+          <div className="text-center max-w-lg mx-auto">
+            <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Sparkles className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <h3 className="text-xl font-semibold mb-3">Start Your Cost Analysis</h3>
+            <p className="text-muted-foreground mb-8 text-base">
+              Describe any product to the AI assistant on the right to get a detailed breakdown of materials, labor, and overhead costs.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto">
+              {examples.map((example, i) => (
+                <div
+                  key={i}
+                  className="group flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all cursor-default"
+                >
+                  <span className="text-sm font-medium">{example}</span>
+                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all" />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-6">
+              Try typing one of these examples in the chat!
             </p>
           </div>
         </CardContent>
@@ -242,40 +269,19 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            {/* Product Info */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Product Analysis</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-3">
-                  {productDescription}
-                </p>
-                {components.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {components.map((c, i) => (
-                      <Badge key={i} variant="secondary">
-                        {c.name}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Product Info Header */}
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-medium text-muted-foreground">Analysis for: <span className="text-foreground font-semibold">{productDescription}</span></h3>
+            </div>
 
-            {/* Charts */}
-            {(materialsTotal > 0 || laborTotal > 0) && (
-              <div className="grid md:grid-cols-2 gap-4">
-                <CostBreakdownPieChart
-                  materialsTotal={materialsTotal}
-                  laborTotal={laborTotal}
-                  overheadTotal={overheadTotal || 0}
-                />
-                {materialCosts && materialCosts.length > 0 && (
-                  <MaterialCostBarChart materialCosts={materialCosts} />
-                )}
-              </div>
-            )}
+            <OverviewGrid
+              totalCost={totalCost || 0}
+              componentCount={components.length}
+              materialsTotal={materialsTotal}
+              laborTotal={laborTotal}
+              overheadTotal={overheadTotal || 0}
+              materialCosts={materialCosts}
+            />
           </TabsContent>
 
           <TabsContent value="materials">

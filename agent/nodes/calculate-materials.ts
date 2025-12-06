@@ -16,9 +16,9 @@ export async function calculateMaterialCosts(state: CostingState): Promise<Parti
     const materialCosts: MaterialCostItem[] = [];
     const unknownMaterials: string[] = [];
 
-    // First pass: look up known materials
+    // First pass: look up known materials using semantic search
     for (const component of components) {
-      const materialPrice = findMaterialPrice(component.material);
+      const materialPrice = await findMaterialPrice(component.material);
 
       if (materialPrice) {
         // Handle unit conversion if needed
