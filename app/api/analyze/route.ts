@@ -129,7 +129,7 @@ async function calculateMaterialCosts(components: ProductComponent[]): Promise<{
 
   // First pass: look up known materials
   for (const component of components) {
-    const materialPrice = findMaterialPrice(component.material);
+    const materialPrice = await findMaterialPrice(component.material);
 
     if (materialPrice) {
       const totalCost = component.quantity * materialPrice.pricePerUnit;
@@ -217,10 +217,17 @@ Return ONLY a JSON object:
   }
 
   // Get rates from database
-  const manufacturingRate = findLaborRate("machining", laborEstimates.manufacturing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate")?.hourlyRate || 45;
-  const assemblyRate = findLaborRate("assembly", laborEstimates.assembly?.skillLevel as "entry" | "intermediate" | "expert" || "entry")?.hourlyRate || 25;
-  const finishingRate = findLaborRate("finishing", laborEstimates.finishing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate")?.hourlyRate || 35;
-  const qcRate = findLaborRate("quality_control", laborEstimates.qualityControl?.skillLevel as "entry" | "intermediate" | "expert" || "entry")?.hourlyRate || 28;
+  const manufacturingResult = await findLaborRate("machining", laborEstimates.manufacturing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
+  const manufacturingRate = manufacturingResult?.hourlyRate || 45;
+
+  const assemblyResult = await findLaborRate("assembly", laborEstimates.assembly?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
+  const assemblyRate = assemblyResult?.hourlyRate || 25;
+
+  const finishingResult = await findLaborRate("finishing", laborEstimates.finishing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
+  const finishingRate = finishingResult?.hourlyRate || 35;
+
+  const qcResult = await findLaborRate("quality_control", laborEstimates.qualityControl?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
+  const qcRate = qcResult?.hourlyRate || 28;
 
   const manufacturingCost = laborEstimates.manufacturing.hours * manufacturingRate;
   const assemblyCost = laborEstimates.assembly.hours * assemblyRate;
@@ -266,7 +273,7 @@ async function generateReport(state: {
   overheadTotal: number;
   totalCost: number;
 }) {
-  const similarProducts = searchSimilarProducts(state.productDescription);
+  const similarProducts = await searchSimilarProducts(state.productDescription);
 
   const response = await complete(
     `Generate a professional should-cost analysis report for this product.
@@ -325,7 +332,7 @@ Also return a JSON object at the end with cost-saving opportunities:
 
   // Save to historical costs
   try {
-    saveHistoricalCost({
+    await saveHistoricalCost({
       productName: state.productDescription.split(/[,.]|for|with/i)[0].trim().slice(0, 100),
       productDescription: state.productDescription,
       totalCost: state.totalCost,
