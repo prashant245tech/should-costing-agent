@@ -1,6 +1,7 @@
 import { complete, extractJSON } from "@/lib/llm";
 import { CostingState, CostBreakdown } from "../state";
 import { saveHistoricalCost, searchSimilarProducts } from "@/lib/db";
+import { getPrompt } from "../prompts/registry";
 
 export async function generateReport(state: CostingState): Promise<Partial<CostingState>> {
   const {
@@ -11,6 +12,8 @@ export async function generateReport(state: CostingState): Promise<Partial<Costi
     overheadPercentage,
     overheadTotal,
     totalCost,
+    category,
+    subcategory,
   } = state;
 
   const materialsTotal = materialCosts?.reduce((sum, m) => sum + m.totalCost, 0) || 0;
@@ -18,52 +21,22 @@ export async function generateReport(state: CostingState): Promise<Partial<Costi
 
   try {
     // Find similar products for comparison
-    const similarProducts = searchSimilarProducts(productDescription);
+    const similarProducts = await searchSimilarProducts(productDescription);
+
+    // Get category-aware prompt
+    let prompt = await getPrompt('report', {
+      state,
+      category,
+      subcategory,
+    });
+
+    // Append similar products info if available
+    if (similarProducts.length > 0) {
+      prompt += `\n\n**Similar Historical Products for comparison:**\n${similarProducts.map(p => `- ${p.productName}: $${p.totalCost}`).join('\n')}`;
+    }
 
     // Generate comprehensive report using AI
-    const response = await complete(
-      `Generate a professional should-cost analysis report for this product.
-
-**Product Description:** ${productDescription}
-
-**Components:**
-${components?.map(c => `- ${c.name}: ${c.quantity} ${c.unit} of ${c.material}`).join('\n')}
-
-**Material Costs:**
-${materialCosts?.map(m => `- ${m.component} (${m.material}): ${m.quantity} ${m.unit} × $${m.pricePerUnit} = $${m.totalCost.toFixed(2)}`).join('\n')}
-**Materials Subtotal: $${materialsTotal.toFixed(2)}**
-
-**Labor Costs:**
-- Manufacturing: $${laborCosts?.manufacturing.toFixed(2)}
-- Assembly: $${laborCosts?.assembly.toFixed(2)}
-- Finishing: $${laborCosts?.finishing.toFixed(2)}
-- Quality Control: $${laborCosts?.qualityControl.toFixed(2)}
-- Total Hours: ${laborCosts?.totalHours}
-**Labor Subtotal: $${laborTotal.toFixed(2)}**
-
-**Overhead:**
-- Rate: ${(overheadPercentage * 100).toFixed(0)}%
-- Amount: $${overheadTotal?.toFixed(2)}
-
-**TOTAL ESTIMATED COST: $${totalCost?.toFixed(2)}**
-
-${similarProducts.length > 0 ? `
-**Similar Historical Products:**
-${similarProducts.map(p => `- ${p.productName}: $${p.totalCost}`).join('\n')}
-` : ''}
-
-Create a detailed markdown report with:
-1. Executive Summary (2-3 sentences)
-2. Cost Breakdown Analysis
-3. Key Cost Drivers
-4. Cost Saving Opportunities (at least 3 specific suggestions)
-5. Market Comparison (if similar products exist)
-6. Recommendations
-
-Also return a JSON object at the end with cost-saving opportunities as an array:
-{"costSavingOpportunities": ["suggestion 1", "suggestion 2", "suggestion 3"]}`,
-      { maxTokens: 2000 }
-    );
+    const response = await complete(prompt, { maxTokens: 2000 });
 
     // Extract the report and cost-saving opportunities
     let reportText = response;

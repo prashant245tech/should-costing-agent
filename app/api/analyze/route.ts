@@ -1,40 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { complete, extractJSON } from "@/lib/llm";
-import { findMaterialPrice, findLaborRate, searchSimilarProducts, saveHistoricalCost } from "@/lib/db";
+import { complete, extractJSON, logProviderInfo } from "@/lib/llm";
+import { findMaterialPrice, searchSimilarProducts, saveHistoricalCost } from "@/lib/db";
+import { getPrompts, CATEGORY_DEFINITIONS } from "@/lib/prompts";
+import {
+  CostingPrompts,
+  ProductComponent,
+  MaterialCostItem,
+  CostData,
+  FullAnalysisResult,
+  ExWorksCostBreakdown
+} from "@/lib/prompts/types";
 
-interface ProductComponent {
-  name: string;
-  material: string;
-  quantity: number;
-  unit: string;
-}
+// Log which LLM provider is active on first request
+logProviderInfo();
 
-interface MaterialCostItem {
-  component: string;
-  material: string;
-  quantity: number;
-  unit: string;
-  pricePerUnit: number;
-  totalCost: number;
-}
-
-interface LaborCosts {
-  assembly: number;
-  manufacturing: number;
-  finishing: number;
-  qualityControl: number;
-  totalHours: number;
-  totalCost: number;
-}
-
-// POST /api/analyze - Run full cost analysis
+// POST /api/analyze - Run Ex-Works cost analysis
 export async function POST(req: NextRequest) {
   try {
-    const { productDescription, action, currentState } = await req.json();
+    const { productDescription, action, currentState, aum } = await req.json();
 
     if (action === "approve" && currentState) {
-      // Generate final report
-      const report = await generateReport(currentState);
+      const prompts = getPrompts(currentState.category || "default");
+      const report = await generateReport(currentState, prompts);
       return NextResponse.json({ success: true, ...report });
     }
 
@@ -45,31 +32,109 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 1: Analyze product and extract components
-    const components = await analyzeProduct(productDescription);
+    // Build category list for prompt
+    const categoryList = CATEGORY_DEFINITIONS
+      .map(c => `- ${c.id}: ${c.name} (${c.description})`)
+      .join('\n');
 
-    // Step 2: Calculate material costs
-    const { materialCosts, materialsTotal } = await calculateMaterialCosts(components);
+    // Use default prompts for initial analysis
+    const defaultPrompts = getPrompts("default");
 
-    // Step 3: Calculate labor costs
-    const laborCosts = await calculateLaborCosts(productDescription, components, materialsTotal);
+    console.log("Making Ex-Works analysis call...");
+    const analysisResponse = await complete(
+      `${defaultPrompts.systemRole}\n\n${defaultPrompts.fullAnalysisPrompt(productDescription, categoryList, aum)}`,
+      { maxTokens: 16000 }
+    );
 
-    // Step 4: Calculate overhead
-    const directCosts = materialsTotal + laborCosts.totalCost;
-    const overheadPercentage = await calculateOverheadPercentage(productDescription);
-    const overheadTotal = Math.round(directCosts * overheadPercentage * 100) / 100;
-    const totalCost = Math.round((directCosts + overheadTotal) * 100) / 100;
+    const analysis = extractJSON<FullAnalysisResult>(analysisResponse, "object");
+
+    if (!analysis || !analysis.components || analysis.components.length === 0) {
+      throw new Error("Failed to parse analysis response");
+    }
+
+    // Get category-specific prompts
+    const prompts = getPrompts(analysis.category, analysis.subCategory);
+    const categoryDef = CATEGORY_DEFINITIONS.find(c => c.id === analysis.category);
+
+    console.log(`Detected: ${categoryDef?.name || analysis.category} (${Math.round((analysis.confidence || 0.8) * 100)}%)`);
+    console.log(`AUM: ${analysis.aum?.toLocaleString() || 'Not specified'}`);
+
+    // Normalize components
+    const components: ProductComponent[] = analysis.components.map((c) => ({
+      name: String(c.name || "Unknown"),
+      material: String(c.material || "unknown").toLowerCase(),
+      quantity: Number(c.quantity) || 0.001,
+      unit: String(c.unit || "kg").toLowerCase(),
+    }));
+
+    // Calculate material costs
+    const { materialCosts, materialsTotal } = await calculateMaterialCosts(components, prompts);
+
+    // Calculate Ex-Works breakdown from percentages
+    const estimatedUnitCost = analysis.estimatedUnitCost || 1.00;
+    const costPercentages = analysis.costPercentages || {
+      rawMaterial: 0.45,
+      conversion: 0.15,
+      labour: 0.10,
+      packing: 0.10,
+      overhead: 0.10,
+      margin: 0.10
+    };
+
+    // Use actual material cost if we have it, otherwise use estimate
+    const actualRawMaterialCost = materialsTotal > 0 ? materialsTotal : estimatedUnitCost * costPercentages.rawMaterial;
+
+    // Recalculate total based on actual raw material if available
+    const rawMaterialPercent = costPercentages.rawMaterial;
+    const totalFromMaterials = materialsTotal > 0 ? materialsTotal / rawMaterialPercent : estimatedUnitCost;
+
+    const exWorksCostBreakdown: ExWorksCostBreakdown = {
+      rawMaterial: actualRawMaterialCost,
+      conversion: totalFromMaterials * costPercentages.conversion,
+      labour: totalFromMaterials * costPercentages.labour,
+      packing: totalFromMaterials * costPercentages.packing,
+      overhead: totalFromMaterials * costPercentages.overhead,
+      margin: totalFromMaterials * costPercentages.margin,
+      totalExWorks: 0 // Will calculate
+    };
+
+    exWorksCostBreakdown.totalExWorks =
+      exWorksCostBreakdown.rawMaterial +
+      exWorksCostBreakdown.conversion +
+      exWorksCostBreakdown.labour +
+      exWorksCostBreakdown.packing +
+      exWorksCostBreakdown.overhead +
+      exWorksCostBreakdown.margin;
+
+    // Build detection message
+    const detectionMessage = analysis.subCategory
+      ? `Detected: **${categoryDef?.name || analysis.category}** → **${analysis.subCategory}** (${Math.round((analysis.confidence || 0.8) * 100)}% confidence). ${analysis.reasoning || ''}`
+      : `Detected: **${categoryDef?.name || analysis.category}** (${Math.round((analysis.confidence || 0.8) * 100)}% confidence). ${analysis.reasoning || ''}`;
 
     return NextResponse.json({
       success: true,
+      category: analysis.category,
+      categoryName: categoryDef?.name || analysis.category,
+      subCategory: analysis.subCategory || "",
+      detectionMessage,
       productDescription,
+
+      // AUM
+      aum: analysis.aum,
+      aumReasoning: analysis.aumReasoning,
+
+      // Components
       components,
       materialCosts,
-      materialsTotal,
-      laborCosts,
-      overheadPercentage,
-      overheadTotal,
-      totalCost,
+
+      // Ex-Works breakdown
+      exWorksCostBreakdown,
+      costPercentages,
+
+      // Summary
+      unitCost: exWorksCostBreakdown.totalExWorks,
+      currency: analysis.currency || "USD",
+
       approvalStatus: "pending",
     });
   } catch (error) {
@@ -81,53 +146,14 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function analyzeProduct(productDescription: string): Promise<ProductComponent[]> {
-  const response = await complete(
-    `You are an expert manufacturing cost analyst. Analyze the following product and break it down into its components.
-
-Product Description: ${productDescription}
-
-For each component, identify:
-1. Component name
-2. Primary material
-3. Estimated quantity needed
-4. Unit of measurement (e.g., board_foot, lb, piece, sq_ft, meter, etc.)
-
-Return ONLY a JSON array of components. Each component should have:
-- name: string (component name)
-- material: string (primary material, use common names like "oak wood", "steel", "aluminum", etc.)
-- quantity: number (estimated quantity)
-- unit: string (unit of measurement)
-
-Consider all parts including: main structure, fasteners, hardware, finishes, and any subcomponents.
-
-Return ONLY the JSON array, no other text. Example format:
-[
-  {"name": "Tabletop", "material": "oak wood", "quantity": 12, "unit": "board_foot"},
-  {"name": "Table Legs", "material": "oak wood", "quantity": 8, "unit": "board_foot"}
-]`,
-    { maxTokens: 2000 }
-  );
-
-  const components = extractJSON<ProductComponent[]>(response, "array");
-
-  if (components) {
-    return components.map((c: ProductComponent) => ({
-      name: String(c.name || "Unknown"),
-      material: String(c.material || "unknown").toLowerCase(),
-      quantity: Number(c.quantity) || 1,
-      unit: String(c.unit || "piece").toLowerCase(),
-    }));
-  }
-
-  throw new Error("Failed to parse components");
-}
-
-async function calculateMaterialCosts(components: ProductComponent[]): Promise<{ materialCosts: MaterialCostItem[]; materialsTotal: number }> {
+async function calculateMaterialCosts(
+  components: ProductComponent[],
+  prompts: CostingPrompts
+): Promise<{ materialCosts: MaterialCostItem[]; materialsTotal: number }> {
   const materialCosts: MaterialCostItem[] = [];
   const unknownMaterials: ProductComponent[] = [];
 
-  // First pass: look up known materials
+  // First pass: look up known materials in DB
   for (const component of components) {
     const materialPrice = await findMaterialPrice(component.material);
 
@@ -139,31 +165,33 @@ async function calculateMaterialCosts(components: ProductComponent[]): Promise<{
         quantity: component.quantity,
         unit: materialPrice.unit,
         pricePerUnit: materialPrice.pricePerUnit,
-        totalCost: Math.round(totalCost * 100) / 100,
+        totalCost: Math.round(totalCost * 10000) / 10000, // 4 decimal places for unit costs
       });
     } else {
       unknownMaterials.push(component);
     }
   }
 
-  // Second pass: estimate unknown materials using AI
+  // Second pass: estimate unknown materials (CONDITIONAL LLM CALL)
   if (unknownMaterials.length > 0) {
+    console.log(`Pricing ${unknownMaterials.length} unknown materials...`);
     const response = await complete(
-      `As a manufacturing cost expert, estimate the price per unit for these materials. Consider current market prices in USD.
-
-Materials to estimate:
-${unknownMaterials.map(c => `- ${c.material} (${c.quantity} ${c.unit})`).join('\n')}
-
-Return ONLY a JSON object with material names as keys and objects with pricePerUnit and unit as values.
-Example: {"carbon fiber": {"pricePerUnit": 25.00, "unit": "lb"}}`,
-      { maxTokens: 1000 }
+      `${prompts.systemRole}\n\n${prompts.materialPrompt(unknownMaterials)}`,
+      { maxTokens: 8000 }
     );
 
     const estimates = extractJSON<Record<string, { pricePerUnit: number; unit: string }>>(response, "object");
 
     if (estimates) {
       for (const component of unknownMaterials) {
-        const estimate = estimates[component.material] || { pricePerUnit: 10.00, unit: component.unit };
+        let estimate = estimates[component.name]
+          || estimates[component.material]
+          || Object.entries(estimates).find(([key]) =>
+            key.toLowerCase() === component.name.toLowerCase() ||
+            key.toLowerCase() === component.material.toLowerCase()
+          )?.[1]
+          || { pricePerUnit: 1.00, unit: component.unit };
+
         const totalCost = component.quantity * estimate.pricePerUnit;
         materialCosts.push({
           component: component.name,
@@ -171,7 +199,7 @@ Example: {"carbon fiber": {"pricePerUnit": 25.00, "unit": "lb"}}`,
           quantity: component.quantity,
           unit: estimate.unit || component.unit,
           pricePerUnit: estimate.pricePerUnit,
-          totalCost: Math.round(totalCost * 100) / 100,
+          totalCost: Math.round(totalCost * 10000) / 10000,
         });
       }
     }
@@ -181,149 +209,23 @@ Example: {"carbon fiber": {"pricePerUnit": 25.00, "unit": "lb"}}`,
   return { materialCosts, materialsTotal };
 }
 
-async function calculateLaborCosts(productDescription: string, components: ProductComponent[], materialsTotal: number): Promise<LaborCosts> {
-  const response = await complete(
-    `As a manufacturing expert, estimate the labor hours needed to produce this product.
-
-Product: ${productDescription}
-
-Components:
-${components.map(c => `- ${c.name} (${c.material})`).join('\n')}
-
-Total material cost: $${materialsTotal.toFixed(2)}
-
-Estimate hours for each category and specify skill level (entry, intermediate, or expert):
-
-Return ONLY a JSON object:
-{
-  "manufacturing": {"hours": 5, "skillLevel": "intermediate"},
-  "assembly": {"hours": 2, "skillLevel": "entry"},
-  "finishing": {"hours": 1.5, "skillLevel": "intermediate"},
-  "qualityControl": {"hours": 0.5, "skillLevel": "entry"}
-}`,
-    { maxTokens: 1000 }
-  );
-
-  let laborEstimates = {
-    manufacturing: { hours: 4, skillLevel: "intermediate" },
-    assembly: { hours: 2, skillLevel: "entry" },
-    finishing: { hours: 1, skillLevel: "intermediate" },
-    qualityControl: { hours: 0.5, skillLevel: "entry" },
-  };
-
-  const parsed = extractJSON<typeof laborEstimates>(response, "object");
-  if (parsed) {
-    laborEstimates = { ...laborEstimates, ...parsed };
-  }
-
-  // Get rates from database
-  const manufacturingResult = await findLaborRate("machining", laborEstimates.manufacturing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
-  const manufacturingRate = manufacturingResult?.hourlyRate || 45;
-
-  const assemblyResult = await findLaborRate("assembly", laborEstimates.assembly?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
-  const assemblyRate = assemblyResult?.hourlyRate || 25;
-
-  const finishingResult = await findLaborRate("finishing", laborEstimates.finishing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
-  const finishingRate = finishingResult?.hourlyRate || 35;
-
-  const qcResult = await findLaborRate("quality_control", laborEstimates.qualityControl?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
-  const qcRate = qcResult?.hourlyRate || 28;
-
-  const manufacturingCost = laborEstimates.manufacturing.hours * manufacturingRate;
-  const assemblyCost = laborEstimates.assembly.hours * assemblyRate;
-  const finishingCost = laborEstimates.finishing.hours * finishingRate;
-  const qcCost = laborEstimates.qualityControl.hours * qcRate;
-  const totalHours = laborEstimates.manufacturing.hours + laborEstimates.assembly.hours + laborEstimates.finishing.hours + laborEstimates.qualityControl.hours;
-
-  return {
-    manufacturing: Math.round(manufacturingCost * 100) / 100,
-    assembly: Math.round(assemblyCost * 100) / 100,
-    finishing: Math.round(finishingCost * 100) / 100,
-    qualityControl: Math.round(qcCost * 100) / 100,
-    totalHours: Math.round(totalHours * 100) / 100,
-    totalCost: Math.round((manufacturingCost + assemblyCost + finishingCost + qcCost) * 100) / 100,
-  };
-}
-
-async function calculateOverheadPercentage(productDescription: string): Promise<number> {
-  const response = await complete(
-    `As a manufacturing cost analyst, determine the appropriate overhead percentage for this product: "${productDescription}"
-
-Consider: facility costs, equipment depreciation, utilities, insurance, administrative costs.
-Manufacturing overhead typically ranges from 15% to 40%.
-
-Return ONLY a JSON object: {"overheadPercentage": 0.25}`,
-    { maxTokens: 200 }
-  );
-
-  const parsed = extractJSON<{ overheadPercentage: number }>(response, "object");
-  if (parsed) {
-    return Math.min(0.40, Math.max(0.15, parsed.overheadPercentage || 0.25));
-  }
-  return 0.25;
-}
-
-async function generateReport(state: {
-  productDescription: string;
-  components: ProductComponent[];
-  materialCosts: MaterialCostItem[];
-  materialsTotal: number;
-  laborCosts: LaborCosts;
-  overheadPercentage: number;
-  overheadTotal: number;
-  totalCost: number;
-}) {
+async function generateReport(state: CostData, prompts: CostingPrompts) {
   const similarProducts = await searchSimilarProducts(state.productDescription);
 
+  console.log("Generating report...");
   const response = await complete(
-    `Generate a professional should-cost analysis report for this product.
-
-**Product Description:** ${state.productDescription}
-
-**Components:**
-${state.components.map(c => `- ${c.name}: ${c.quantity} ${c.unit} of ${c.material}`).join('\n')}
-
-**Material Costs:**
-${state.materialCosts.map(m => `- ${m.component} (${m.material}): ${m.quantity} ${m.unit} × $${m.pricePerUnit} = $${m.totalCost.toFixed(2)}`).join('\n')}
-**Materials Subtotal: $${state.materialsTotal.toFixed(2)}**
-
-**Labor Costs:**
-- Manufacturing: $${state.laborCosts.manufacturing.toFixed(2)}
-- Assembly: $${state.laborCosts.assembly.toFixed(2)}
-- Finishing: $${state.laborCosts.finishing.toFixed(2)}
-- Quality Control: $${state.laborCosts.qualityControl.toFixed(2)}
-- Total Hours: ${state.laborCosts.totalHours}
-**Labor Subtotal: $${state.laborCosts.totalCost.toFixed(2)}**
-
-**Overhead:**
-- Rate: ${(state.overheadPercentage * 100).toFixed(0)}%
-- Amount: $${state.overheadTotal.toFixed(2)}
-
-**TOTAL ESTIMATED COST: $${state.totalCost.toFixed(2)}**
-
-${similarProducts.length > 0 ? `
-**Similar Historical Products:**
-${similarProducts.map(p => `- ${p.productName}: $${p.totalCost}`).join('\n')}
-` : ''}
-
-Create a detailed markdown report with:
-1. Executive Summary (2-3 sentences)
-2. Cost Breakdown Analysis
-3. Key Cost Drivers
-4. Cost Saving Opportunities (at least 3 specific suggestions)
-5. Recommendations
-
-Also return a JSON object at the end with cost-saving opportunities:
-{"costSavingOpportunities": ["suggestion 1", "suggestion 2", "suggestion 3"]}`,
-    { maxTokens: 2000 }
+    `${prompts.systemRole}\n\n${prompts.reportPrompt(state, similarProducts)}`,
+    { maxTokens: 2500 }
   );
 
   let reportText = response;
   let costSavingOpportunities: string[] = [];
+  let targetPrice: number | undefined;
 
-  const parsed = extractJSON<{ costSavingOpportunities: string[] }>(reportText, "object");
-  if (parsed?.costSavingOpportunities) {
-    costSavingOpportunities = parsed.costSavingOpportunities;
+  const parsed = extractJSON<{ costSavingOpportunities: string[]; targetPrice?: number }>(reportText, "object");
+  if (parsed) {
+    costSavingOpportunities = parsed.costSavingOpportunities || [];
+    targetPrice = parsed.targetPrice;
     const jsonMatch = reportText.match(/\{[\s\S]*"costSavingOpportunities"[\s\S]*\}/);
     if (jsonMatch) {
       reportText = reportText.replace(jsonMatch[0], "").trim();
@@ -335,12 +237,12 @@ Also return a JSON object at the end with cost-saving opportunities:
     await saveHistoricalCost({
       productName: state.productDescription.split(/[,.]|for|with/i)[0].trim().slice(0, 100),
       productDescription: state.productDescription,
-      totalCost: state.totalCost,
+      totalCost: state.exWorksCostBreakdown?.totalExWorks || state.totalCost,
       breakdown: {
+        exWorks: state.exWorksCostBreakdown,
         materials: state.materialCosts,
-        labor: state.laborCosts,
-        overhead: { percentage: state.overheadPercentage, total: state.overheadTotal },
         components: state.components,
+        aum: state.aum,
       },
     });
   } catch (e) {
@@ -350,12 +252,11 @@ Also return a JSON object at the end with cost-saving opportunities:
   return {
     finalReport: reportText,
     breakdown: {
+      exWorksCostBreakdown: state.exWorksCostBreakdown,
       materialsTotal: state.materialsTotal,
-      laborTotal: state.laborCosts.totalCost,
-      overheadTotal: state.overheadTotal,
-      grandTotal: state.totalCost,
-      summary: `Materials ($${state.materialsTotal.toFixed(2)}) + Labor ($${state.laborCosts.totalCost.toFixed(2)}) + Overhead ($${state.overheadTotal.toFixed(2)}) = $${state.totalCost.toFixed(2)}`,
+      unitCost: state.exWorksCostBreakdown?.totalExWorks,
       costSavingOpportunities,
+      targetPrice,
     },
     approvalStatus: "approved",
     progress: 100,

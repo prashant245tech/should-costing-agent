@@ -1,5 +1,6 @@
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { CostingStateAnnotation, CostingState } from "./state";
+import { detectCategory } from "./nodes/detect-category";
 import { analyzeProduct } from "./nodes/analyze-product";
 import { calculateMaterialCosts } from "./nodes/calculate-materials";
 import { calculateLaborCosts } from "./nodes/calculate-labor";
@@ -53,6 +54,7 @@ export function buildCostingWorkflow() {
   const workflow = new StateGraph(CostingStateAnnotation);
 
   // Add all nodes
+  workflow.addNode("detect-category", wrapNode(detectCategory, "detect-category"));
   workflow.addNode("analyze", wrapNode(analyzeProduct, "analyze"));
   workflow.addNode("materials", wrapNode(calculateMaterialCosts, "materials"));
   workflow.addNode("labor", wrapNode(calculateLaborCosts, "labor"));
@@ -62,7 +64,8 @@ export function buildCostingWorkflow() {
   // Define the flow - use type assertion for edge connections
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graph = workflow as any;
-  graph.addEdge(START, "analyze");
+  graph.addEdge(START, "detect-category");
+  graph.addEdge("detect-category", "analyze");
   graph.addEdge("analyze", "materials");
   graph.addEdge("materials", "labor");
   graph.addEdge("labor", "overhead");

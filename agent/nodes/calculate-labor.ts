@@ -1,9 +1,10 @@
 import { complete, extractJSON } from "@/lib/llm";
 import { CostingState, LaborCosts } from "../state";
 import { findLaborRate } from "@/lib/db";
+import { getPrompt, getCategoryConfig } from "../prompts/registry";
 
 export async function calculateLaborCosts(state: CostingState): Promise<Partial<CostingState>> {
-  const { productDescription, components, materialCosts } = state;
+  const { productDescription, components, materialCosts, category, subcategory } = state;
 
   if (!components || components.length === 0) {
     return {
@@ -13,34 +14,15 @@ export async function calculateLaborCosts(state: CostingState): Promise<Partial<
   }
 
   try {
-    // Use AI to estimate labor hours based on product complexity
-    const response = await complete(
-      `As a manufacturing expert, estimate the labor hours needed to produce this product.
+    // Get category-aware prompt and config
+    const prompt = await getPrompt('labor', {
+      state,
+      category,
+      subcategory,
+    });
+    const categoryConfig = await getCategoryConfig(category, subcategory);
 
-Product: ${productDescription}
-
-Components:
-${components.map(c => `- ${c.name} (${c.material})`).join('\n')}
-
-Total material cost: $${materialCosts?.reduce((sum, m) => sum + m.totalCost, 0).toFixed(2) || 0}
-
-Estimate hours for each category:
-1. Manufacturing (cutting, shaping, forming materials)
-2. Assembly (putting components together)
-3. Finishing (painting, staining, polishing)
-4. Quality Control (inspection, testing)
-
-Also specify the skill level needed for each: entry, intermediate, or expert.
-
-Return ONLY a JSON object in this exact format:
-{
-  "manufacturing": {"hours": 5, "skillLevel": "intermediate"},
-  "assembly": {"hours": 2, "skillLevel": "entry"},
-  "finishing": {"hours": 1.5, "skillLevel": "intermediate"},
-  "qualityControl": {"hours": 0.5, "skillLevel": "entry"}
-}`,
-      { maxTokens: 1000 }
-    );
+    const response = await complete(prompt, { maxTokens: 1000 });
 
     let laborEstimates: Record<string, { hours: number; skillLevel: string }>;
     const parsed = extractJSON<Record<string, { hours: number; skillLevel: string }>>(response, "object");
@@ -58,20 +40,29 @@ Return ONLY a JSON object in this exact format:
     }
 
     // Calculate costs using labor rates from database
-    const manufacturingRate = findLaborRate("machining", laborEstimates.manufacturing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate")
-      || findLaborRate("woodworking", "intermediate");
-    const assemblyRate = findLaborRate("assembly", laborEstimates.assembly?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
-    const finishingRate = findLaborRate("finishing", laborEstimates.finishing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
-    const qcRate = findLaborRate("quality_control", laborEstimates.qualityControl?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
+    // Use category config labor categories if available, otherwise use defaults
+    const laborCategories = categoryConfig.laborCategories || [];
+    const hasCustomCategories = laborCategories.length > 0 && !laborCategories.find(c => c.id === 'manufacturing');
 
-    const manufacturingHours = laborEstimates.manufacturing?.hours || 4;
+    // Get labor rates (await the async calls)
+    const manufacturingRate = await findLaborRate("machining", laborEstimates.manufacturing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate")
+      || await findLaborRate("woodworking", "intermediate");
+    const assemblyRate = await findLaborRate("assembly", laborEstimates.assembly?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
+    const finishingRate = await findLaborRate("finishing", laborEstimates.finishing?.skillLevel as "entry" | "intermediate" | "expert" || "intermediate");
+    const qcRate = await findLaborRate("quality_control", laborEstimates.qualityControl?.skillLevel as "entry" | "intermediate" | "expert" || "entry");
+
+    // For custom categories (like food-beverage), map to appropriate rates
+    const prepRate = hasCustomCategories ? await findLaborRate("prep", "entry") : null;
+    const cookingRate = hasCustomCategories ? await findLaborRate("cooking", "intermediate") : null;
+
+    const manufacturingHours = laborEstimates.manufacturing?.hours || laborEstimates.prep?.hours || 4;
     const assemblyHours = laborEstimates.assembly?.hours || 2;
-    const finishingHours = laborEstimates.finishing?.hours || 1;
+    const finishingHours = laborEstimates.finishing?.hours || laborEstimates.cooking?.hours || 1;
     const qcHours = laborEstimates.qualityControl?.hours || 0.5;
 
-    const manufacturingCost = manufacturingHours * (manufacturingRate?.hourlyRate || 45);
+    const manufacturingCost = manufacturingHours * (prepRate?.hourlyRate || manufacturingRate?.hourlyRate || 45);
     const assemblyCost = assemblyHours * (assemblyRate?.hourlyRate || 25);
-    const finishingCost = finishingHours * (finishingRate?.hourlyRate || 35);
+    const finishingCost = finishingHours * (cookingRate?.hourlyRate || finishingRate?.hourlyRate || 35);
     const qcCost = qcHours * (qcRate?.hourlyRate || 28);
 
     const laborCosts: LaborCosts = {

@@ -7,7 +7,26 @@ import "@copilotkit/react-ui/styles.css";
 import { CostingDashboard } from "@/components/costing-dashboard";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 
-// State types
+// Ex-Works Cost Breakdown (NEW)
+interface ExWorksCostBreakdown {
+  rawMaterial: number;
+  conversion: number;
+  labour: number;
+  packing: number;
+  overhead: number;
+  margin: number;
+  totalExWorks: number;
+}
+
+interface CostPercentages {
+  rawMaterial: number;
+  conversion: number;
+  labour: number;
+  packing: number;
+  overhead: number;
+  margin: number;
+}
+
 interface ProductComponent {
   name: string;
   material: string;
@@ -24,34 +43,41 @@ interface MaterialCostItem {
   totalCost: number;
 }
 
-interface LaborCosts {
-  assembly: number;
-  manufacturing: number;
-  finishing: number;
-  qualityControl: number;
-  totalHours: number;
-  totalCost: number;
-}
-
 interface CostBreakdown {
-  materialsTotal: number;
-  laborTotal: number;
-  overheadTotal: number;
-  grandTotal: number;
-  summary: string;
+  materialsTotal?: number;
+  exWorksCostBreakdown?: ExWorksCostBreakdown;
+  unitCost?: number;
   costSavingOpportunities?: string[];
+  targetPrice?: number;
 }
 
 type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_revision";
 
 interface CostingState {
   productDescription: string;
+  category: string;
+  categoryName: string;
+  subCategory: string;
+  detectionMessage: string;
+
+  // AUM
+  aum?: number;
+  aumReasoning?: string;
+
+  // Components & Materials
   components: ProductComponent[];
   materialCosts: MaterialCostItem[];
-  laborCosts: LaborCosts;
-  overheadPercentage: number;
-  overheadTotal: number;
+
+  // Ex-Works Cost Structure
+  exWorksCostBreakdown?: ExWorksCostBreakdown;
+  costPercentages?: CostPercentages;
+  unitCost: number;
+  currency: string;
+
+  // Legacy (kept for compatibility)
   totalCost: number;
+
+  // UI State
   breakdown: CostBreakdown | null;
   approvalStatus: ApprovalStatus;
   currentNode: string;
@@ -62,18 +88,18 @@ interface CostingState {
 
 const initialState: CostingState = {
   productDescription: "",
+  category: "",
+  categoryName: "",
+  subCategory: "",
+  detectionMessage: "",
+  aum: undefined,
+  aumReasoning: "",
   components: [],
   materialCosts: [],
-  laborCosts: {
-    assembly: 0,
-    manufacturing: 0,
-    finishing: 0,
-    qualityControl: 0,
-    totalHours: 0,
-    totalCost: 0,
-  },
-  overheadPercentage: 0.25,
-  overheadTotal: 0,
+  exWorksCostBreakdown: undefined,
+  costPercentages: undefined,
+  unitCost: 0,
+  currency: "USD",
   totalCost: 0,
   breakdown: null,
   approvalStatus: "pending",
@@ -92,7 +118,9 @@ function CostingAppContent() {
     description: "The current state of the should-cost analysis",
     value: JSON.stringify({
       productDescription: state.productDescription,
-      totalCost: state.totalCost,
+      category: state.categoryName,
+      unitCost: state.unitCost,
+      aum: state.aum,
       progress: state.progress,
       approvalStatus: state.approvalStatus,
       componentsCount: state.components.length,
@@ -103,7 +131,7 @@ function CostingAppContent() {
   // Action: Analyze a product
   useCopilotAction({
     name: "analyzeProduct",
-    description: "Analyze a product to calculate its should-cost estimate. Use this when the user describes a product they want to cost.",
+    description: "Analyze a product to calculate its Ex-Works should-cost estimate for procurement negotiations.",
     parameters: [
       {
         name: "productDescription",
@@ -111,8 +139,14 @@ function CostingAppContent() {
         description: "A detailed description of the product to analyze",
         required: true,
       },
+      {
+        name: "aum",
+        type: "number",
+        description: "Optional Annual Unit Movement (volume). If not provided, AI will estimate.",
+        required: false,
+      },
     ],
-    handler: async ({ productDescription }) => {
+    handler: async ({ productDescription, aum }) => {
       setIsAnalyzing(true);
       setState((prev) => ({
         ...prev,
@@ -126,7 +160,7 @@ function CostingAppContent() {
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productDescription }),
+          body: JSON.stringify({ productDescription, aum }),
         });
 
         const data = await response.json();
@@ -142,9 +176,14 @@ function CostingAppContent() {
           progress: 80,
         }));
 
-        return `Analysis complete! I found ${data.components?.length || 0} components.
-Total estimated cost: $${data.totalCost?.toFixed(2) || 0}.
-Please review the breakdown in the dashboard and click "Approve" to generate the final report.`;
+        const aumInfo = data.aum ? ` (AUM: ${(data.aum / 1000000).toFixed(0)}M units/year)` : "";
+
+        return `${data.detectionMessage || "Analysis complete!"}${aumInfo}
+
+Unit Cost: $${data.unitCost?.toFixed(4) || "0.00"}
+Components: ${data.components?.length || 0}
+
+Please review the breakdown and click "Approve" to generate the final report.`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Analysis failed";
         setState((prev) => ({
@@ -185,13 +224,13 @@ Please review the breakdown in the dashboard and click "Approve" to generate the
             action: "approve",
             currentState: {
               productDescription: state.productDescription,
+              category: state.category,
               components: state.components,
               materialCosts: state.materialCosts,
               materialsTotal: state.materialCosts.reduce((sum, m) => sum + m.totalCost, 0),
-              laborCosts: state.laborCosts,
-              overheadPercentage: state.overheadPercentage,
-              overheadTotal: state.overheadTotal,
-              totalCost: state.totalCost,
+              exWorksCostBreakdown: state.exWorksCostBreakdown,
+              aum: state.aum,
+              totalCost: state.unitCost,
             },
           }),
         });
@@ -209,7 +248,7 @@ Please review the breakdown in the dashboard and click "Approve" to generate the
           progress: 100,
         }));
 
-        return `Report generated successfully! The final cost estimate is $${state.totalCost.toFixed(2)}. You can view the detailed report in the dashboard and download it as needed.`;
+        return `Report generated! Ex-Works unit cost: $${state.unitCost.toFixed(4)}. View the full report in the dashboard.`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Report generation failed";
         setState((prev) => ({
@@ -222,14 +261,14 @@ Please review the breakdown in the dashboard and click "Approve" to generate the
     },
   });
 
-  // Action: Reset the analysis
+  // Action: Reset
   useCopilotAction({
     name: "resetAnalysis",
     description: "Clear the current analysis and start fresh",
     parameters: [],
     handler: async () => {
       setState(initialState);
-      return "Analysis cleared. You can now describe a new product to analyze.";
+      return "Analysis cleared. Describe a new product to analyze.";
     },
   });
 
@@ -249,13 +288,13 @@ Please review the breakdown in the dashboard and click "Approve" to generate the
           action: "approve",
           currentState: {
             productDescription: state.productDescription,
+            category: state.category,
             components: state.components,
             materialCosts: state.materialCosts,
             materialsTotal: state.materialCosts.reduce((sum, m) => sum + m.totalCost, 0),
-            laborCosts: state.laborCosts,
-            overheadPercentage: state.overheadPercentage,
-            overheadTotal: state.overheadTotal,
-            totalCost: state.totalCost,
+            exWorksCostBreakdown: state.exWorksCostBreakdown,
+            aum: state.aum,
+            totalCost: state.unitCost,
           },
         }),
       });
@@ -293,33 +332,25 @@ Please review the breakdown in the dashboard and click "Approve" to generate the
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <CopilotSidebar
         className="h-full"
-        instructions={`You are an expert cost analyst assistant helping users perform should-cost analysis for products.
+        instructions={`You are an expert procurement cost analyst helping with Ex-Works should-cost modeling for vendor negotiations.
 
 Your capabilities:
-1. Analyze products when users describe what they want to cost
-2. Break down products into components (materials, labor, overhead)
-3. Calculate material costs using current market prices
-4. Estimate labor hours based on manufacturing complexity
-5. Calculate overhead costs
-6. Generate detailed cost reports with cost-saving recommendations
+1. Analyze products to calculate Ex-Works unit costs
+2. Break down costs into: Raw Material, Conversion, Labour, Packing, Overhead, Margin
+3. Use industry benchmarks for labor (Food: 5-12%, Apparel: 20-40%, Electronics: 8-15%)
+4. Estimate AUM (Annual Unit Movement) if not provided
+5. Generate procurement-focused reports with negotiation leverage points
 
-How to interact:
-- When a user describes a product (e.g., "I want to cost a wooden dining table"), use the analyzeProduct action to start the analysis
-- After analysis completes, remind users to review the dashboard and approve the estimate
-- When users say "approve" or want to generate the report, use the approveEstimate action
-- If users want to start over, use the resetAnalysis action
-
-Be conversational and helpful. Ask clarifying questions if the product description is vague (e.g., dimensions, materials, quantity).
-
-Current analysis status:
+Current analysis:
 - Product: ${state.productDescription || "None"}
-- Progress: ${state.progress}%
+- Category: ${state.categoryName || "Not classified"}
+- Unit Cost: ${state.unitCost ? `$${state.unitCost.toFixed(4)}` : "Not calculated"}
+- AUM: ${state.aum ? `${(state.aum / 1000000).toFixed(0)}M/year` : "Not estimated"}
 - Status: ${state.approvalStatus}
-- Total Cost: ${state.totalCost ? `$${state.totalCost.toFixed(2)}` : "Not calculated"}
 `}
         labels={{
           title: "Should Costing Agent",
-          initial: "Hi! I'm your cost analysis assistant. Describe a product you'd like to cost, and I'll break down all the materials, labor, and overhead costs for you.\n\nFor example, try: \"I want to cost a wooden dining table that seats 6 people\"",
+          initial: "Hi! I'm your procurement cost analyst. Describe a product to get an Ex-Works cost breakdown for vendor negotiations.\n\nTry: \"Oreo cookie\" or \"Cotton t-shirt\"",
         }}
       >
         <main className="flex-1 p-6 overflow-auto">
@@ -329,7 +360,7 @@ Current analysis status:
                 Should Costing Dashboard
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
-                AI-powered cost analysis for any product
+                Ex-Works cost analysis for procurement negotiations
               </p>
             </header>
 
