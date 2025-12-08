@@ -5,28 +5,39 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  CostBreakdownPieChart,
-  MaterialCostBarChart,
-} from "@/components/cost-breakdown-chart";
+import { ExWorksBreakdownChart, MaterialCostBarChart } from "@/components/cost-breakdown-chart";
 import { MaterialsBreakdown } from "@/components/materials-breakdown";
-import { LaborEstimates } from "@/components/labor-estimates";
-import { OverheadAnalysis } from "@/components/overhead-analysis";
 import { FinalReport } from "@/components/final-report";
 import { OverviewGrid } from "@/components/overview-grid";
 import {
   Search,
   Package,
-  Clock,
-  Building2,
   FileText,
   Loader2,
   Sparkles,
   ArrowRight,
-  Copy,
 } from "lucide-react";
 
-// Define the state type inline to avoid import issues
+// Ex-Works Cost Breakdown
+interface ExWorksCostBreakdown {
+  rawMaterial: number;
+  conversion: number;
+  labour: number;
+  packing: number;
+  overhead: number;
+  margin: number;
+  totalExWorks: number;
+}
+
+interface CostPercentages {
+  rawMaterial: number;
+  conversion: number;
+  labour: number;
+  packing: number;
+  overhead: number;
+  margin: number;
+}
+
 interface ProductComponent {
   name: string;
   material: string;
@@ -43,33 +54,30 @@ interface MaterialCostItem {
   totalCost: number;
 }
 
-interface LaborCosts {
-  assembly: number;
-  manufacturing: number;
-  finishing: number;
-  qualityControl: number;
-  totalHours: number;
-  totalCost: number;
-}
-
 interface CostBreakdown {
-  materialsTotal: number;
-  laborTotal: number;
-  overheadTotal: number;
-  grandTotal: number;
-  summary: string;
+  materialsTotal?: number;
+  exWorksCostBreakdown?: ExWorksCostBreakdown;
+  unitCost?: number;
   costSavingOpportunities?: string[];
+  targetPrice?: number;
 }
 
 type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_revision";
 
 interface CostingState {
   productDescription: string;
+  category: string;
+  categoryName: string;
+  subCategory: string;
+  detectionMessage: string;
+  aum?: number;
+  aumReasoning?: string;
   components: ProductComponent[];
   materialCosts: MaterialCostItem[];
-  laborCosts: LaborCosts;
-  overheadPercentage: number;
-  overheadTotal: number;
+  exWorksCostBreakdown?: ExWorksCostBreakdown;
+  costPercentages?: CostPercentages;
+  unitCost: number;
+  currency: string;
   totalCost: number;
   breakdown: CostBreakdown | null;
   approvalStatus: ApprovalStatus;
@@ -89,39 +97,38 @@ const nodeInfo: Record<string, { label: string; icon: React.ReactNode; descripti
   analyze: {
     label: "Analyzing Product",
     icon: <Search className="h-4 w-4" />,
-    description: "Breaking down product into components...",
+    description: "Classifying product and breaking down components...",
   },
   materials: {
-    label: "Calculating Materials",
+    label: "Pricing Materials",
     icon: <Package className="h-4 w-4" />,
-    description: "Looking up material prices and calculating costs...",
-  },
-  labor: {
-    label: "Estimating Labor",
-    icon: <Clock className="h-4 w-4" />,
-    description: "Estimating manufacturing and assembly time...",
+    description: "Looking up material prices...",
   },
   overhead: {
-    label: "Analyzing Overhead",
-    icon: <Building2 className="h-4 w-4" />,
-    description: "Calculating overhead and total costs...",
+    label: "Calculating Costs",
+    icon: <Package className="h-4 w-4" />,
+    description: "Computing Ex-Works cost breakdown...",
   },
   report: {
     label: "Generating Report",
     icon: <FileText className="h-4 w-4" />,
-    description: "Creating detailed cost report...",
+    description: "Creating procurement report...",
   },
 };
 
 export function CostingDashboard({ state, onApprove, onReject }: CostingDashboardProps) {
   const {
     productDescription,
+    categoryName,
+    subCategory,
+    detectionMessage,
+    aum,
     components,
     materialCosts,
-    laborCosts,
-    overheadPercentage,
-    overheadTotal,
-    totalCost,
+    exWorksCostBreakdown,
+    costPercentages,
+    unitCost,
+    currency,
     breakdown,
     approvalStatus,
     currentNode,
@@ -130,10 +137,8 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     error,
   } = state;
 
-  const materialsTotal = materialCosts?.reduce((sum, m) => sum + m.totalCost, 0) || 0;
-  const laborTotal = laborCosts?.totalCost || 0;
   const isProcessing = progress > 0 && progress < 100 && approvalStatus !== "pending";
-  const showFinalReport = progress === 100 && breakdown && finalReport;
+  const showFinalReport = progress === 100 && finalReport;
 
   // Show error state
   if (error) {
@@ -152,10 +157,10 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
   // Show initial state
   if (!productDescription) {
     const examples = [
-      "Wooden Dining Table for 6",
-      "Steel Industrial Bracket",
-      "Wireless Gaming Mouse",
-      "Cotton T-Shirt with Print"
+      "Oreo Cookie",
+      "Cotton T-Shirt",
+      "Aluminum Beverage Can",
+      "Cardboard Shipping Box"
     ];
 
     return (
@@ -165,12 +170,12 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
             <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
               <Sparkles className="h-8 w-8 text-blue-600 dark:text-blue-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-3">Start Your Cost Analysis</h3>
+            <h3 className="text-xl font-semibold mb-3">Ex-Works Cost Analysis</h3>
             <p className="text-muted-foreground mb-8 text-base">
-              Describe any product to the AI assistant on the right to get a detailed breakdown of materials, labor, and overhead costs.
+              Describe a product to get a procurement-grade cost breakdown for vendor negotiations.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto">
+            <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
               {examples.map((example, i) => (
                 <div
                   key={i}
@@ -182,7 +187,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-6">
-              Try typing one of these examples in the chat!
+              Try one of these examples in the chat!
             </p>
           </div>
         </CardContent>
@@ -214,7 +219,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
         </Card>
       )}
 
-      {/* Approval Section - Show prominently when pending */}
+      {/* Approval Section */}
       {approvalStatus === "pending" && progress >= 80 && !showFinalReport && (
         <Card className="border-2 border-blue-500 bg-blue-50 dark:bg-blue-950/30">
           <CardContent className="pt-6">
@@ -224,8 +229,14 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
                   Ready for Review
                 </h3>
                 <p className="text-sm text-blue-600 dark:text-blue-400">
-                  Total Estimated Cost: <span className="font-bold text-xl">${totalCost?.toFixed(2) || '0.00'}</span>
+                  Ex-Works Unit Cost: <span className="font-bold text-xl">${unitCost?.toFixed(4) || '0.0000'}</span>
+                  <span className="text-xs ml-2">({currency})</span>
                 </p>
+                {aum && (
+                  <p className="text-xs text-blue-500">
+                    AUM: {(aum / 1000000).toFixed(0)}M units/year
+                  </p>
+                )}
               </div>
               <div className="flex gap-3">
                 <button
@@ -258,28 +269,36 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
         />
       )}
 
-      {/* Main Dashboard - show when we have data but not final report */}
-      {!showFinalReport && (components.length > 0 || materialsTotal > 0) && (
+      {/* Main Dashboard - 3 Tabs */}
+      {!showFinalReport && (components.length > 0 || exWorksCostBreakdown) && (
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="materials">Materials</TabsTrigger>
-            <TabsTrigger value="labor">Labor</TabsTrigger>
-            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="materials">Bill of Materials</TabsTrigger>
+            <TabsTrigger value="report">Summary</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            {/* Product Info Header */}
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-medium text-muted-foreground">Analysis for: <span className="text-foreground font-semibold">{productDescription}</span></h3>
-            </div>
+            {/* Category Badge */}
+            {categoryName && (
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="secondary">{categoryName}</Badge>
+                {subCategory && <Badge variant="outline">{subCategory}</Badge>}
+                {aum && (
+                  <Badge variant="outline" className="ml-auto">
+                    AUM: {(aum / 1000000).toFixed(0)}M/year
+                  </Badge>
+                )}
+              </div>
+            )}
 
             <OverviewGrid
-              totalCost={totalCost || 0}
+              unitCost={unitCost || 0}
+              currency={currency || "USD"}
               componentCount={components.length}
-              materialsTotal={materialsTotal}
-              laborTotal={laborTotal}
-              overheadTotal={overheadTotal || 0}
+              aum={aum}
+              exWorksCostBreakdown={exWorksCostBreakdown}
+              costPercentages={costPercentages}
               materialCosts={materialCosts}
             />
           </TabsContent>
@@ -291,25 +310,52 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
             />
           </TabsContent>
 
-          <TabsContent value="labor">
-            <LaborEstimates
-              costs={laborCosts}
-              isLoading={currentNode === "labor"}
-            />
-          </TabsContent>
+          <TabsContent value="report">
+            <Card>
+              <CardHeader>
+                <CardTitle>Cost Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {exWorksCostBreakdown && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">Component</th>
+                          <th className="text-right py-2">$/Unit</th>
+                          <th className="text-right py-2">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { name: "Raw Material", value: exWorksCostBreakdown.rawMaterial, pct: costPercentages?.rawMaterial },
+                          { name: "Conversion", value: exWorksCostBreakdown.conversion, pct: costPercentages?.conversion },
+                          { name: "Labour", value: exWorksCostBreakdown.labour, pct: costPercentages?.labour },
+                          { name: "Packing", value: exWorksCostBreakdown.packing, pct: costPercentages?.packing },
+                          { name: "Overhead", value: exWorksCostBreakdown.overhead, pct: costPercentages?.overhead },
+                          { name: "Margin", value: exWorksCostBreakdown.margin, pct: costPercentages?.margin },
+                        ].map((row) => (
+                          <tr key={row.name} className="border-b">
+                            <td className="py-2">{row.name}</td>
+                            <td className="text-right font-mono">${row.value.toFixed(4)}</td>
+                            <td className="text-right text-muted-foreground">{((row.pct || 0) * 100).toFixed(0)}%</td>
+                          </tr>
+                        ))}
+                        <tr className="font-bold">
+                          <td className="py-2">Total Ex-Works</td>
+                          <td className="text-right font-mono">${exWorksCostBreakdown.totalExWorks.toFixed(4)}</td>
+                          <td className="text-right">100%</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-          <TabsContent value="summary">
-            <OverheadAnalysis
-              materialsTotal={materialsTotal}
-              laborTotal={laborTotal}
-              overheadPercentage={overheadPercentage || 0.25}
-              overheadTotal={overheadTotal || 0}
-              totalCost={totalCost || 0}
-              approvalStatus={approvalStatus}
-              onApprove={onApprove}
-              onReject={onReject}
-              isLoading={currentNode === "overhead"}
-            />
+                {detectionMessage && (
+                  <p className="text-sm text-muted-foreground mt-4">{detectionMessage}</p>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       )}

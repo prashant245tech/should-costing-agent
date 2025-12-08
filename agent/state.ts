@@ -49,6 +49,18 @@ export const CostingStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => "",
   }),
+
+  // Product category for prompt customization (optional)
+  category: Annotation<string | undefined>({
+    reducer: (_, y) => y,
+    default: () => undefined,
+  }),
+
+  // Product subcategory for more specific prompts (optional)
+  subcategory: Annotation<string | undefined>({
+    reducer: (_, y) => y,
+    default: () => undefined,
+  }),
   
   // Analysis results
   components: Annotation<ProductComponent[]>({

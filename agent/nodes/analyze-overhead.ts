@@ -1,8 +1,9 @@
 import { complete, extractJSON } from "@/lib/llm";
 import { CostingState } from "../state";
+import { getPrompt, getCategoryConfig } from "../prompts/registry";
 
 export async function analyzeOverhead(state: CostingState): Promise<Partial<CostingState>> {
-  const { productDescription, materialCosts, laborCosts } = state;
+  const { materialCosts, laborCosts, category, subcategory } = state;
 
   const materialsTotal = materialCosts?.reduce((sum, m) => sum + m.totalCost, 0) || 0;
   const laborTotal = laborCosts?.totalCost || 0;
@@ -16,34 +17,15 @@ export async function analyzeOverhead(state: CostingState): Promise<Partial<Cost
   }
 
   try {
-    // Use AI to determine appropriate overhead percentage
-    const response = await complete(
-      `As a manufacturing cost analyst, determine the appropriate overhead percentage for this product.
+    // Get category-aware prompt and config
+    const prompt = await getPrompt('overhead', {
+      state,
+      category,
+      subcategory,
+    });
+    const categoryConfig = await getCategoryConfig(category, subcategory);
 
-Product: ${productDescription}
-
-Direct Costs:
-- Materials: $${materialsTotal.toFixed(2)}
-- Labor: $${laborTotal.toFixed(2)}
-- Total Direct: $${directCosts.toFixed(2)}
-
-Consider overhead factors like:
-- Facility costs (rent, utilities)
-- Equipment depreciation
-- Administrative costs
-- Insurance
-- Packaging and shipping preparation
-- Tooling and maintenance
-
-Manufacturing overhead typically ranges from 15% to 40% of direct costs.
-
-Return ONLY a JSON object with:
-{
-  "overheadPercentage": 0.25,
-  "reasoning": "Brief explanation of the percentage chosen"
-}`,
-      { maxTokens: 500 }
-    );
+    const response = await complete(prompt, { maxTokens: 500 });
 
     let overheadData: { overheadPercentage: number; reasoning: string };
     const parsed = extractJSON<{ overheadPercentage: number; reasoning: string }>(response, "object");
@@ -58,8 +40,9 @@ Return ONLY a JSON object with:
       };
     }
 
-    // Ensure overhead is within reasonable bounds (15-40%)
-    const overheadPercentage = Math.min(0.40, Math.max(0.15, overheadData.overheadPercentage));
+    // Ensure overhead is within reasonable bounds based on category config
+    const { min, max } = categoryConfig.overheadRange || { min: 0.15, max: 0.40 };
+    const overheadPercentage = Math.min(max, Math.max(min, overheadData.overheadPercentage));
     const overheadTotal = Math.round(directCosts * overheadPercentage * 100) / 100;
     const totalCost = Math.round((directCosts + overheadTotal) * 100) / 100;
 

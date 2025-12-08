@@ -1,32 +1,137 @@
 import OpenAI from "openai";
 
 // Centralized LLM configuration using OpenAI-compatible API
-// This allows easy switching between providers (OpenAI, Gemini, local models, etc.)
+// Supports: Azure AI Foundry, Google Gemini, OpenAI, Ollama, etc.
+
+export type LLMProvider = "azure" | "gemini" | "openai" | "ollama" | "custom";
 
 export interface LLMConfig {
+  provider?: LLMProvider;
   baseURL?: string;
   apiKey?: string;
   model?: string;
+  // Azure-specific
+  azureApiVersion?: string;
+  azureDeployment?: string;
 }
 
-// Default configuration - uses environment variables
-const defaultConfig: LLMConfig = {
-  baseURL: process.env.LLM_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai/",
-  apiKey: process.env.LLM_API_KEY || process.env.GOOGLE_API_KEY,
-  model: process.env.LLM_MODEL || "gemini-2.0-flash",
+// Provider-specific configurations
+const PROVIDER_DEFAULTS: Record<LLMProvider, Partial<LLMConfig>> = {
+  azure: {
+    azureApiVersion: "2024-02-15-preview",
+  },
+  gemini: {
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    model: "gemini-2.0-flash",
+  },
+  openai: {
+    baseURL: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  },
+  ollama: {
+    baseURL: "http://localhost:11434/v1",
+    model: "llama3.2",
+  },
+  custom: {},
 };
 
-// Create OpenAI client with custom base URL for any OpenAI-compatible API
-function createClient(config: LLMConfig = {}): OpenAI {
-  const mergedConfig = { ...defaultConfig, ...config };
+// Detect provider from environment or URL
+function detectProvider(): LLMProvider {
+  const explicit = process.env.LLM_PROVIDER as LLMProvider;
+  if (explicit && PROVIDER_DEFAULTS[explicit]) return explicit;
 
-  return new OpenAI({
-    baseURL: mergedConfig.baseURL,
+  const baseURL = process.env.LLM_BASE_URL || "";
+  if (baseURL.includes("azure.com") || baseURL.includes("services.ai.azure")) return "azure";
+  if (baseURL.includes("googleapis.com") || process.env.GOOGLE_API_KEY) return "gemini";
+  if (baseURL.includes("openai.com")) return "openai";
+  if (baseURL.includes("localhost:11434")) return "ollama";
+
+  return "gemini"; // Default fallback
+}
+
+// Build configuration from environment variables
+function buildConfig(): LLMConfig {
+  const provider = detectProvider();
+  const providerDefaults = PROVIDER_DEFAULTS[provider];
+
+  return {
+    provider,
+    baseURL: process.env.LLM_BASE_URL || providerDefaults.baseURL,
+    apiKey: process.env.LLM_API_KEY || process.env.GOOGLE_API_KEY || process.env.AZURE_API_KEY,
+    model: process.env.LLM_MODEL || providerDefaults.model,
+    azureApiVersion: process.env.AZURE_API_VERSION || providerDefaults.azureApiVersion,
+    azureDeployment: process.env.AZURE_DEPLOYMENT,
+  };
+}
+
+// Default configuration - auto-detected from environment
+const defaultConfig: LLMConfig = buildConfig();
+
+// Create OpenAI client with provider-specific configuration
+export function createClient(config: LLMConfig = {}): OpenAI {
+  const mergedConfig = { ...defaultConfig, ...config };
+  const isAzure = mergedConfig.provider === "azure";
+
+  let baseURL = mergedConfig.baseURL || "";
+
+  if (isAzure && baseURL) {
+    // Remove /chat/completions if present (OpenAI SDK will add it)
+    baseURL = baseURL.replace(/\/chat\/completions\/?$/i, "").replace(/\/+$/, "");
+  }
+
+  const clientOptions: ConstructorParameters<typeof OpenAI>[0] = {
+    baseURL,
     apiKey: mergedConfig.apiKey,
-  });
+  };
+
+  // Azure-specific configuration
+  if (isAzure) {
+    clientOptions.defaultHeaders = {
+      "api-key": mergedConfig.apiKey || "",
+    };
+    clientOptions.defaultQuery = {
+      "api-version": mergedConfig.azureApiVersion || "2024-08-01-preview",
+    };
+  }
+
+  return new OpenAI(clientOptions);
+}
+
+// Get client configuration (for CopilotKit and other integrations)
+export function getClientConfig(): {
+  baseURL: string;
+  apiKey: string;
+  defaultHeaders?: Record<string, string>;
+  defaultQuery?: Record<string, string>;
+  isAzure: boolean;
+} {
+  const isAzure = defaultConfig.provider === "azure";
+  let baseURL = defaultConfig.baseURL || "";
+
+  if (isAzure && baseURL) {
+    baseURL = baseURL.replace(/\/chat\/completions\/?$/i, "").replace(/\/+$/, "");
+  }
+
+  const result: ReturnType<typeof getClientConfig> = {
+    baseURL,
+    apiKey: defaultConfig.apiKey || "",
+    isAzure,
+  };
+
+  if (isAzure) {
+    result.defaultHeaders = {
+      "api-key": defaultConfig.apiKey || "",
+    };
+    result.defaultQuery = {
+      "api-version": defaultConfig.azureApiVersion || "2024-08-01-preview",
+    };
+  }
+
+  return result;
 }
 
 // Singleton client instance
+
 let clientInstance: OpenAI | null = null;
 
 function getClient(): OpenAI {
@@ -39,6 +144,24 @@ function getClient(): OpenAI {
 // Get the configured model name
 export function getModel(): string {
   return defaultConfig.model || "gemini-2.0-flash";
+}
+
+// Get current provider info (useful for debugging/logging)
+export function getProviderInfo(): { provider: LLMProvider; model: string; baseURL: string } {
+  return {
+    provider: defaultConfig.provider || "gemini",
+    model: defaultConfig.model || "gemini-2.0-flash",
+    baseURL: defaultConfig.baseURL || "",
+  };
+}
+
+// Log provider info at startup (call once)
+let hasLoggedProvider = false;
+export function logProviderInfo(): void {
+  if (hasLoggedProvider) return;
+  hasLoggedProvider = true;
+  const info = getProviderInfo();
+  console.log(`🤖 LLM Provider: ${info.provider.toUpperCase()} | Model: ${info.model}`);
 }
 
 export interface ChatMessage {
@@ -70,20 +193,48 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<Ch
   const client = getClient();
   const model = options.model || getModel();
 
-  const response = await client.chat.completions.create({
+  // GPT-5 series uses max_completion_tokens instead of max_tokens
+  // and supports reasoning_effort to control thinking depth
+  const isGPT5 = model.toLowerCase().includes('gpt-5');
+
+  const requestParams: Parameters<typeof client.chat.completions.create>[0] = {
     model,
     messages: options.messages,
-    max_tokens: options.maxTokens,
     temperature: options.temperature,
-  });
+  };
+
+  // Use appropriate token limit parameter based on model
+  if (isGPT5) {
+    (requestParams as any).max_completion_tokens = options.maxTokens;
+    // Set reasoning effort to low to minimize thinking tokens
+    (requestParams as any).reasoning_effort = "low";
+  } else {
+    requestParams.max_tokens = options.maxTokens;
+  }
+
+
+  const response = await client.chat.completions.create(requestParams) as OpenAI.Chat.Completions.ChatCompletion;
 
   const choice = response.choices[0];
-  if (!choice || !choice.message?.content) {
+
+  // GPT-5 models may return content in different fields
+  // Check message.content first, then try reasoning models' output field
+  let content = choice?.message?.content;
+
+  // For reasoning models like o1/gpt-5, response might be in different format
+  if (!content && choice?.message) {
+    // Try to get content from any available field
+    const msg = choice.message as any;
+    content = msg.content || msg.reasoning_content || msg.text || '';
+  }
+
+  if (!content) {
+    console.error("LLM Response:", JSON.stringify(response, null, 2));
     throw new Error("No response content from LLM");
   }
 
   return {
-    content: choice.message.content,
+    content,
     usage: response.usage ? {
       promptTokens: response.usage.prompt_tokens,
       completionTokens: response.usage.completion_tokens,
@@ -91,6 +242,8 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<Ch
     } : undefined,
   };
 }
+
+
 
 /**
  * Simple text completion with a single user prompt

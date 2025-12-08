@@ -1,8 +1,9 @@
 import { complete, extractJSON } from "@/lib/llm";
 import { CostingState, ProductComponent } from "../state";
+import { getPrompt } from "../prompts/registry";
 
 export async function analyzeProduct(state: CostingState): Promise<Partial<CostingState>> {
-  const { productDescription } = state;
+  const { productDescription, category, subcategory } = state;
 
   if (!productDescription) {
     return {
@@ -12,32 +13,14 @@ export async function analyzeProduct(state: CostingState): Promise<Partial<Costi
   }
 
   try {
-    const response = await complete(
-      `You are an expert manufacturing cost analyst. Analyze the following product and break it down into its components.
+    // Get category-aware prompt
+    const prompt = await getPrompt('analyze', {
+      state,
+      category,
+      subcategory,
+    });
 
-Product Description: ${productDescription}
-
-For each component, identify:
-1. Component name
-2. Primary material
-3. Estimated quantity needed
-4. Unit of measurement (e.g., board_foot, lb, piece, sq_ft, meter, etc.)
-
-Return your analysis as a JSON array of components. Each component should have:
-- name: string (component name)
-- material: string (primary material, use common names like "oak wood", "steel", "aluminum", etc.)
-- quantity: number (estimated quantity)
-- unit: string (unit of measurement)
-
-Consider all parts including: main structure, fasteners, hardware, finishes, and any subcomponents.
-
-Return ONLY the JSON array, no other text. Example format:
-[
-  {"name": "Tabletop", "material": "oak wood", "quantity": 12, "unit": "board_foot"},
-  {"name": "Table Legs", "material": "oak wood", "quantity": 8, "unit": "board_foot"}
-]`,
-      { maxTokens: 2000 }
-    );
+    const response = await complete(prompt, { maxTokens: 2000 });
 
     // Parse the JSON response
     let components: ProductComponent[];
