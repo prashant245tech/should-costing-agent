@@ -585,7 +585,7 @@ export async function saveHistoricalCost(
         productName: cost.productName,
         productDescription: cost.productDescription,
         totalCost: cost.totalCost,
-        breakdown: cost.breakdown,
+        breakdown: cost.breakdown as any,
         userId: cost.userId,
       },
     });

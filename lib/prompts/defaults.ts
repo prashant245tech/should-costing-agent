@@ -1,11 +1,11 @@
 import { CostingPrompts, ProductComponent, CostData } from "./types";
 
 export const defaultPrompts: CostingPrompts = {
-    categoryName: "General Manufacturing",
+  categoryName: "General Manufacturing",
 
-    systemRole: "You are an expert procurement cost analyst specializing in Ex-Works should-cost modeling for vendor negotiations.",
+  systemRole: "You are an expert procurement cost analyst specializing in Ex-Works should-cost modeling for vendor negotiations.",
 
-    fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => `
+  fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => `
 You are an expert procurement cost analyst. Create an Ex-Works should-cost model for vendor negotiations.
 
 Product: "${productDescription}"
@@ -48,19 +48,69 @@ Return a SINGLE JSON object with this EXACT structure:
   },
   
   "estimatedUnitCost": 0.15,
-  "currency": "USD"
+  "currency": "USD",
+
+  "conversionDetails": {
+    "total": 0.15,
+    "subComponents": {
+      "equipmentDepreciation": {"name": "Equipment Depreciation", "cost": 0.05, "percentage": 0.33, "description": "Ovens and mixers"},
+      "utilities": {"name": "Utilities", "cost": 0.05, "percentage": 0.33, "description": "Gas and electricity"},
+      "maintenance": {"name": "Maintenance", "cost": 0.05, "percentage": 0.33}
+    },
+    "negotiationPoints": ["Ask for energy efficiency logs", "Review maintenance contracts"]
+  },
+
+  "labourDetails": {
+    "total": 0.08,
+    "laborRate": 25.0,
+    "unitsPerLaborHour": 300,
+    "subComponents": {
+        "directLabor": {"name": "Direct Labor", "cost": 0.05, "percentage": 0.62, "description": "Line operators"},
+        "supervision": {"name": "Supervision", "cost": 0.02, "percentage": 0.25},
+        "qualityInspection": {"name": "QC", "cost": 0.01, "percentage": 0.13}
+    },
+    "negotiationPoints": ["Compare shift differentials", "Discuss automation roadmap"]
+  },
+
+  "packingDetails": {
+    "total": 0.10,
+    "subComponents": {
+        "primaryPackaging": {"name": "Primary Film", "cost": 0.06, "percentage": 0.60},
+        "secondaryPackaging": {"name": "Carton", "cost": 0.03, "percentage": 0.30},
+        "labels": {"name": "Labels", "cost": 0.01, "percentage": 0.10}
+    },
+    "negotiationPoints": ["Vendor managed inventory for packaging", "Volume discounts on film"]
+  },
+
+  "overheadDetails": {
+    "total": 0.12,
+    "subComponents": {
+        "facilityAllocation": {"name": "Facility", "cost": 0.06, "percentage": 0.50},
+        "admin": {"name": "Admin", "cost": 0.04, "percentage": 0.33},
+        "insurance": {"name": "Insurance", "cost": 0.02, "percentage": 0.17}
+    },
+    "negotiationPoints": ["Request allocation methodology audit"]
+  },
+
+  "marginAnalysis": {
+    "total": 0.10,
+    "percentage": 0.10,
+    "reasoning": "Standard industry margin for high-volume food production",
+    "negotiationRange": {"min": 0.08, "max": 0.12}
+  }
 }
 
 CRITICAL INSTRUCTIONS:
 1. costPercentages MUST sum to 1.00 (100%)
 2. Use INDUSTRY BENCHMARKS for labour percentage
 3. components: List materials per SINGLE UNIT of product
-4. estimatedUnitCost: Realistic wholesale/manufacturing cost per unit
+4. PROVIDE DETAILED BREAKDOWNS for conversion, labour, packing, overhead with sub-components and negotiation points
+5. estimatedUnitCost: Realistic wholesale/manufacturing cost per unit
 5. AUM affects conversion costs (higher volume = lower per-unit conversion)
 
 Return ONLY the JSON object, no other text.`,
 
-    materialPrompt: (unknownMaterials: ProductComponent[]) => `
+  materialPrompt: (unknownMaterials: ProductComponent[]) => `
 As a procurement cost analyst, estimate wholesale material prices for industrial quantities.
 
 Materials to price:
@@ -71,7 +121,7 @@ Return ONLY a JSON object with material names as keys:
 
 Use realistic WHOLESALE/BULK prices, not retail.`,
 
-    reportPrompt: (data: CostData, similarProducts: any[]) => `
+  reportPrompt: (data: CostData, similarProducts: any[]) => `
 Generate a professional Ex-Works Should-Cost Analysis for procurement negotiations.
 
 **Product:** ${data.productDescription}

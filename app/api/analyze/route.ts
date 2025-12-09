@@ -8,8 +8,22 @@ import {
   MaterialCostItem,
   CostData,
   FullAnalysisResult,
-  ExWorksCostBreakdown
+  ExWorksCostBreakdown,
+  ConversionBreakdown,
+  LabourBreakdown,
+  PackingBreakdown,
+  OverheadBreakdown,
+  MarginBreakdown
 } from "@/lib/prompts/types";
+
+// Extended analysis result with detailed breakdowns
+interface DetailedAnalysisResult extends FullAnalysisResult {
+  conversionDetails?: ConversionBreakdown;
+  labourDetails?: LabourBreakdown;
+  packingDetails?: PackingBreakdown;
+  overheadDetails?: OverheadBreakdown;
+  marginAnalysis?: MarginBreakdown;
+}
 
 // Log which LLM provider is active on first request
 logProviderInfo();
@@ -46,7 +60,7 @@ export async function POST(req: NextRequest) {
       { maxTokens: 16000 }
     );
 
-    const analysis = extractJSON<FullAnalysisResult>(analysisResponse, "object");
+    const analysis = extractJSON<DetailedAnalysisResult>(analysisResponse, "object");
 
     if (!analysis || !analysis.components || analysis.components.length === 0) {
       throw new Error("Failed to parse analysis response");
@@ -88,14 +102,40 @@ export async function POST(req: NextRequest) {
     const rawMaterialPercent = costPercentages.rawMaterial;
     const totalFromMaterials = materialsTotal > 0 ? materialsTotal / rawMaterialPercent : estimatedUnitCost;
 
+    // Build Ex-Works breakdown with detailed sub-components
+    const conversionCost = totalFromMaterials * costPercentages.conversion;
+    const labourCost = totalFromMaterials * costPercentages.labour;
+    const packingCost = totalFromMaterials * costPercentages.packing;
+    const overheadCost = totalFromMaterials * costPercentages.overhead;
+    const marginCost = totalFromMaterials * costPercentages.margin;
+
     const exWorksCostBreakdown: ExWorksCostBreakdown = {
       rawMaterial: actualRawMaterialCost,
-      conversion: totalFromMaterials * costPercentages.conversion,
-      labour: totalFromMaterials * costPercentages.labour,
-      packing: totalFromMaterials * costPercentages.packing,
-      overhead: totalFromMaterials * costPercentages.overhead,
-      margin: totalFromMaterials * costPercentages.margin,
-      totalExWorks: 0 // Will calculate
+      conversion: conversionCost,
+      labour: labourCost,
+      packing: packingCost,
+      overhead: overheadCost,
+      margin: marginCost,
+      totalExWorks: 0, // Will calculate
+
+      // Include raw material details with actual material costs
+      rawMaterialDetails: {
+        total: actualRawMaterialCost,
+        components: materialCosts,
+        description: `Direct material costs for ${components.length} ingredients`,
+        negotiationPoints: ["Commodity price fluctuations", "Volume discounts", "Alternative suppliers"]
+      },
+
+      // Include detailed breakdowns from LLM if available, or scale from percentages
+      conversionDetails: analysis.conversionDetails ? scaleBreakdown(analysis.conversionDetails, conversionCost) : undefined,
+      labourDetails: analysis.labourDetails ? scaleLabourBreakdown(analysis.labourDetails, labourCost) : undefined,
+      packingDetails: analysis.packingDetails ? scaleBreakdown(analysis.packingDetails, packingCost) : undefined,
+      overheadDetails: analysis.overheadDetails ? scaleOverheadBreakdown(analysis.overheadDetails, overheadCost) : undefined,
+      marginAnalysis: analysis.marginAnalysis ? {
+        ...analysis.marginAnalysis,
+        total: marginCost,
+        percentage: costPercentages.margin
+      } : undefined,
     };
 
     exWorksCostBreakdown.totalExWorks =
@@ -260,5 +300,58 @@ async function generateReport(state: CostData, prompts: CostingPrompts) {
     },
     approvalStatus: "approved",
     progress: 100,
+  };
+}
+
+// Helper functions to scale LLM-provided breakdowns to actual calculated costs
+
+/**
+ * Scale a generic breakdown (conversion/packing) to match actual calculated cost
+ * Preserves percentages but adjusts absolute costs
+ */
+function scaleBreakdown<T extends { total: number; subComponents: Record<string, { cost: number; percentage: number; name: string; description?: string }> }>(
+  breakdown: T,
+  actualTotal: number
+): T {
+  const scaleFactor = actualTotal / (breakdown.total || 1);
+
+  const scaledSubComponents = Object.fromEntries(
+    Object.entries(breakdown.subComponents).map(([key, sub]) => [
+      key,
+      {
+        ...sub,
+        cost: Math.round(sub.cost * scaleFactor * 10000) / 10000,
+      }
+    ])
+  ) as T['subComponents'];
+
+  return {
+    ...breakdown,
+    total: actualTotal,
+    subComponents: scaledSubComponents,
+  };
+}
+
+/**
+ * Scale labour breakdown with additional labour-specific fields
+ */
+function scaleLabourBreakdown(breakdown: LabourBreakdown, actualTotal: number): LabourBreakdown {
+  const scaled = scaleBreakdown(breakdown, actualTotal);
+  return {
+    ...scaled,
+    laborRate: breakdown.laborRate,
+    unitsPerLaborHour: breakdown.unitsPerLaborHour,
+    automationLevel: breakdown.automationLevel,
+  };
+}
+
+/**
+ * Scale overhead breakdown with overhead rate
+ */
+function scaleOverheadBreakdown(breakdown: OverheadBreakdown, actualTotal: number): OverheadBreakdown {
+  const scaled = scaleBreakdown(breakdown, actualTotal);
+  return {
+    ...scaled,
+    overheadRate: breakdown.overheadRate,
   };
 }
