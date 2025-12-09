@@ -64,12 +64,9 @@ function buildConfig(): LLMConfig {
   };
 }
 
-// Default configuration - auto-detected from environment
-const defaultConfig: LLMConfig = buildConfig();
-
 // Create OpenAI client with provider-specific configuration
 export function createClient(config: LLMConfig = {}): OpenAI {
-  const mergedConfig = { ...defaultConfig, ...config };
+  const mergedConfig = { ...buildConfig(), ...config };
   const isAzure = mergedConfig.provider === "azure";
 
   let baseURL = mergedConfig.baseURL || "";
@@ -105,8 +102,9 @@ export function getClientConfig(): {
   defaultQuery?: Record<string, string>;
   isAzure: boolean;
 } {
-  const isAzure = defaultConfig.provider === "azure";
-  let baseURL = defaultConfig.baseURL || "";
+  const config = buildConfig();
+  const isAzure = config.provider === "azure";
+  let baseURL = config.baseURL || "";
 
   if (isAzure && baseURL) {
     baseURL = baseURL.replace(/\/chat\/completions\/?$/i, "").replace(/\/+$/, "");
@@ -114,16 +112,16 @@ export function getClientConfig(): {
 
   const result: ReturnType<typeof getClientConfig> = {
     baseURL,
-    apiKey: defaultConfig.apiKey || "",
+    apiKey: config.apiKey || "",
     isAzure,
   };
 
   if (isAzure) {
     result.defaultHeaders = {
-      "api-key": defaultConfig.apiKey || "",
+      "api-key": config.apiKey || "",
     };
     result.defaultQuery = {
-      "api-version": defaultConfig.azureApiVersion || "2024-08-01-preview",
+      "api-version": config.azureApiVersion || "2024-08-01-preview",
     };
   }
 
@@ -143,15 +141,17 @@ function getClient(): OpenAI {
 
 // Get the configured model name
 export function getModel(): string {
-  return defaultConfig.model || "gemini-2.0-flash";
+  const config = buildConfig();
+  return config.model || "gemini-2.0-flash";
 }
 
 // Get current provider info (useful for debugging/logging)
 export function getProviderInfo(): { provider: LLMProvider; model: string; baseURL: string } {
+  const config = buildConfig();
   return {
-    provider: defaultConfig.provider || "gemini",
-    model: defaultConfig.model || "gemini-2.0-flash",
-    baseURL: defaultConfig.baseURL || "",
+    provider: config.provider || "gemini",
+    model: config.model || "gemini-2.0-flash",
+    baseURL: config.baseURL || "",
   };
 }
 

@@ -6,42 +6,15 @@ import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { CostingDashboard } from "@/components/costing-dashboard";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
+import {
+  ExWorksCostBreakdown,
+  CostPercentages,
+  ProductComponent,
+  MaterialCostItem
+} from "@/lib/prompts/types";
 
-// Ex-Works Cost Breakdown (NEW)
-interface ExWorksCostBreakdown {
-  rawMaterial: number;
-  conversion: number;
-  labour: number;
-  packing: number;
-  overhead: number;
-  margin: number;
-  totalExWorks: number;
-}
+// Local UI Types
 
-interface CostPercentages {
-  rawMaterial: number;
-  conversion: number;
-  labour: number;
-  packing: number;
-  overhead: number;
-  margin: number;
-}
-
-interface ProductComponent {
-  name: string;
-  material: string;
-  quantity: number;
-  unit: string;
-}
-
-interface MaterialCostItem {
-  component: string;
-  material: string;
-  quantity: number;
-  unit: string;
-  pricePerUnit: number;
-  totalCost: number;
-}
 
 interface CostBreakdown {
   materialsTotal?: number;
@@ -332,22 +305,6 @@ Please review the breakdown and click "Approve" to generate the final report.`;
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <CopilotSidebar
         className="h-full"
-        instructions={`You are an expert procurement cost analyst helping with Ex-Works should-cost modeling for vendor negotiations.
-
-Your capabilities:
-1. Analyze products to calculate Ex-Works unit costs
-2. Break down costs into: Raw Material, Conversion, Labour, Packing, Overhead, Margin
-3. Use industry benchmarks for labor (Food: 5-12%, Apparel: 20-40%, Electronics: 8-15%)
-4. Estimate AUM (Annual Unit Movement) if not provided
-5. Generate procurement-focused reports with negotiation leverage points
-
-Current analysis:
-- Product: ${state.productDescription || "None"}
-- Category: ${state.categoryName || "Not classified"}
-- Unit Cost: ${state.unitCost ? `$${state.unitCost.toFixed(4)}` : "Not calculated"}
-- AUM: ${state.aum ? `${(state.aum / 1000000).toFixed(0)}M/year` : "Not estimated"}
-- Status: ${state.approvalStatus}
-`}
         labels={{
           title: "Should Costing Agent",
           initial: "Hi! I'm your procurement cost analyst. Describe a product to get an Ex-Works cost breakdown for vendor negotiations.\n\nTry: \"Oreo cookie\" or \"Cotton t-shirt\"",
