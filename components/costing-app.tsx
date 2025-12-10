@@ -15,7 +15,6 @@ import {
 
 // Local UI Types
 
-
 interface CostBreakdown {
   materialsTotal?: number;
   exWorksCostBreakdown?: ExWorksCostBreakdown;
@@ -103,10 +102,11 @@ function CostingAppContent() {
     }),
   });
 
-  // Action: Analyze a product
+  // Action: Analyze a product (client-side to update UI state)
   useCopilotAction({
     name: "analyzeProduct",
     description: "Analyze a product to calculate its Ex-Works should-cost estimate for procurement negotiations.",
+    followUp: false,  // Skip second LLM call - we return our own message
     parameters: [
       {
         name: "productDescription",
@@ -151,14 +151,9 @@ function CostingAppContent() {
           progress: 80,
         }));
 
-        const aumInfo = data.aum ? ` (AUM: ${(data.aum / 1000000).toFixed(0)}M units/year)` : "";
-
-        return `${data.detectionMessage || "Analysis complete!"}${aumInfo}
-
-Unit Cost: $${data.unitCost?.toFixed(4) || "0.00"}
-Components: ${data.components?.length || 0}
-
-Please review the breakdown and click "Approve" to generate the final report.`;
+        // Return minimal response - UI updates via setState above
+        // This avoids lengthy LLM reformulation
+        return `✓ Analysis complete • Cost: $${data.unitCost?.toFixed(4)} • Review dashboard`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Analysis failed";
         setState((prev) => ({
@@ -174,10 +169,11 @@ Please review the breakdown and click "Approve" to generate the final report.`;
     },
   });
 
-  // Action: Approve the estimate
+  // Action: Approve the estimate (client-side to update UI state)
   useCopilotAction({
     name: "approveEstimate",
     description: "Approve the current cost estimate and generate the final report",
+    followUp: false,  // Skip second LLM call
     parameters: [],
     handler: async () => {
       if (state.approvalStatus !== "pending" || state.progress < 80) {
@@ -223,7 +219,7 @@ Please review the breakdown and click "Approve" to generate the final report.`;
           progress: 100,
         }));
 
-        return `Report generated! Ex-Works unit cost: $${state.unitCost.toFixed(4)}. View the full report in the dashboard.`;
+        return `✓ Report generated • View in dashboard`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Report generation failed";
         setState((prev) => ({
@@ -236,17 +232,19 @@ Please review the breakdown and click "Approve" to generate the final report.`;
     },
   });
 
-  // Action: Reset
+  // Action: Reset (client-side to update UI state)
   useCopilotAction({
     name: "resetAnalysis",
     description: "Clear the current analysis and start fresh",
+    followUp: false,  // Skip second LLM call
     parameters: [],
     handler: async () => {
       setState(initialState);
-      return "Analysis cleared. Describe a new product to analyze.";
+      return "✓ Reset complete";
     },
   });
 
+  // Manual approve button handler
   const handleApprove = useCallback(async () => {
     setState((prev) => ({
       ...prev,

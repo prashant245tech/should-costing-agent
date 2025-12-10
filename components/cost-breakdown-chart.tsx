@@ -69,7 +69,7 @@ export function ExWorksBreakdownChart({ breakdown }: ExWorksBreakdownChartProps)
   };
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg">Ex-Works Cost Structure</CardTitle>
       </CardHeader>
@@ -217,7 +217,16 @@ interface MaterialCostBarChartProps {
 }
 
 export function MaterialCostBarChart({ materialCosts }: MaterialCostBarChartProps) {
-  const data = materialCosts.map((item) => ({
+  // Sort by cost descending and take top 5
+  const sortedMaterials = [...materialCosts].sort((a, b) => b.totalCost - a.totalCost);
+  const top5 = sortedMaterials.slice(0, 5);
+  const others = sortedMaterials.slice(5);
+  
+  // Calculate "Others" sum
+  const othersTotal = others.reduce((sum, item) => sum + item.totalCost, 0);
+  
+  // Build display data
+  const displayData = top5.map((item) => ({
     name: item.component.length > 12
       ? item.component.substring(0, 12) + "..."
       : item.component,
@@ -225,6 +234,18 @@ export function MaterialCostBarChart({ materialCosts }: MaterialCostBarChartProp
     fullName: item.component,
     material: item.material,
   }));
+  
+  // Add "Others" if there are more than 5 materials
+  if (others.length > 0) {
+    displayData.push({
+      name: "Others",
+      cost: othersTotal,
+      fullName: `${others.length} other materials`,
+      material: others.map(m => m.material).join(", "),
+    });
+  }
+  
+  const data = displayData;
 
   const CustomBarTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { fullName: string; material: string; cost: number } }> }) => {
     if (active && payload && payload.length) {
@@ -241,7 +262,7 @@ export function MaterialCostBarChart({ materialCosts }: MaterialCostBarChartProp
   };
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg">Material Costs</CardTitle>
       </CardHeader>
