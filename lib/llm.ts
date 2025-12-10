@@ -258,6 +258,62 @@ export async function complete(prompt: string, options?: Omit<ChatCompletionOpti
 }
 
 /**
+ * Streaming text completion with progress callbacks
+ * Uses OpenAI streaming API to provide incremental updates
+ */
+export async function completeWithStream(
+  prompt: string,
+  onProgress: (partialText: string, progressPercent: number) => void | Promise<void>,
+  options?: { maxTokens?: number; expectedTokens?: number }
+): Promise<string> {
+  const client = getClient();
+  const model = getModel();
+  const isGPT5 = model.toLowerCase().includes('gpt-5');
+  
+  // Estimate expected response size for progress calculation
+  const expectedTokens = options?.expectedTokens || options?.maxTokens || 4000;
+  const avgCharsPerToken = 4; // Rough estimate
+  const expectedChars = expectedTokens * avgCharsPerToken;
+
+  const requestParams: any = {
+    model,
+    messages: [{ role: "user", content: prompt }],
+    stream: true,
+  };
+
+  if (isGPT5) {
+    requestParams.max_completion_tokens = options?.maxTokens;
+    requestParams.reasoning_effort = "low";
+  } else {
+    requestParams.max_tokens = options?.maxTokens;
+  }
+
+  const stream = await client.chat.completions.create(requestParams) as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+  
+  let fullContent = "";
+  let lastProgressPercent = 0;
+  
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content || "";
+    fullContent += delta;
+    
+    // Calculate progress based on received chars vs expected
+    const progressPercent = Math.min(95, Math.round((fullContent.length / expectedChars) * 100));
+    
+    // Only emit progress updates when there's meaningful change (every 5%)
+    if (progressPercent >= lastProgressPercent + 5) {
+      lastProgressPercent = progressPercent;
+      await onProgress(fullContent, progressPercent);
+    }
+  }
+  
+  // Final progress
+  await onProgress(fullContent, 100);
+  
+  return fullContent;
+}
+
+/**
  * Extract JSON from LLM response
  * Handles common patterns where JSON is embedded in text
  */

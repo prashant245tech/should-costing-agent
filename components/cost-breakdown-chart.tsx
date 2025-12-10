@@ -31,6 +31,17 @@ interface ExWorksBreakdownChartProps {
   breakdown: ExWorksCostBreakdown;
 }
 
+import { CostWaterfallChart } from "@/components/charts/waterfall-chart";
+
+// Legacy pie chart (kept for compatibility)
+interface CostBreakdownChartProps {
+  materialsTotal: number;
+  laborTotal: number;
+  overheadTotal: number;
+}
+
+const COLORS = ["#3b82f6", "#10b981", "#f59e0b"];
+
 // Colors for 6 Ex-Works components
 const EX_WORKS_COLORS = [
   "#3b82f6", // Raw Material - Blue
@@ -51,81 +62,17 @@ export function ExWorksBreakdownChart({ breakdown }: ExWorksBreakdownChartProps)
     { name: "Margin", value: breakdown.margin, color: EX_WORKS_COLORS[5] },
   ].filter((item) => item.value > 0);
 
-  const total = breakdown.totalExWorks;
-
-  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number }> }) => {
-    if (active && payload && payload.length) {
-      const item = payload[0];
-      const percentage = ((item.value / total) * 100).toFixed(1);
-      return (
-        <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border">
-          <p className="font-semibold">{item.name}</p>
-          <p className="text-sm font-mono">${item.value.toFixed(4)}/unit</p>
-          <p className="text-xs text-muted-foreground">{percentage}%</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">Ex-Works Cost Structure</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={75}
-                paddingAngle={2}
-                dataKey="value"
-                label={({ name, percent }) =>
-                  `${(name as string).split(' ')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`
-                }
-                labelLine={false}
-              >
-                {data.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.color}
-                    stroke={entry.color}
-                  />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex flex-wrap justify-center gap-3 mt-2">
-          {data.map((item, index) => (
-            <div key={index} className="flex items-center gap-1.5">
-              <div
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="text-xs">{item.name}</span>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="h-full">
+      <CostWaterfallChart
+        data={data}
+        title="Ex-Works Cost Structure"
+        currency="$"
+        showPercentage={true}
+      />
+    </div>
   );
 }
-
-// Legacy pie chart (kept for compatibility)
-interface CostBreakdownChartProps {
-  materialsTotal: number;
-  laborTotal: number;
-  overheadTotal: number;
-}
-
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b"];
 
 export function CostBreakdownPieChart({
   materialsTotal,

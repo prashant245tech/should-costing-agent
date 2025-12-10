@@ -25,6 +25,7 @@ interface WaterfallChartProps {
     title?: string;
     onBarClick?: (data: any) => void;
     selectedIndex?: number | null;
+    showPercentage?: boolean;
 }
 
 export function CostWaterfallChart({
@@ -32,7 +33,8 @@ export function CostWaterfallChart({
     currency = "$",
     title = "Cost Build-up",
     onBarClick,
-    selectedIndex
+    selectedIndex,
+    showPercentage = false
 }: WaterfallChartProps) {
     // Transform data for waterfall
     // Each bar needs: name, start, end, value (for tooltip)
@@ -82,6 +84,8 @@ export function CostWaterfallChart({
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             const data = payload[1] ? payload[1].payload : payload[0].payload;
+            const percentage = ((data.value / totalValue) * 100).toFixed(1);
+            
             return (
                 <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border text-sm">
                     <p className="font-semibold mb-1">{data.name}</p>
@@ -90,6 +94,7 @@ export function CostWaterfallChart({
                             <span className="text-muted-foreground">Cost:</span>
                             <span className="font-mono font-medium">
                                 {currency}{data.value.toFixed(4)}
+                                {showPercentage && !data.isTotal && ` (${percentage}%)`}
                             </span>
                         </p>
                         {!data.isTotal && (

@@ -127,45 +127,64 @@ function CostingAppContent() {
         ...prev,
         productDescription,
         currentNode: "analyze",
-        progress: 10,
+        progress: 5,
         error: null,
       }));
 
-      try {
-        const response = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productDescription, aum }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Analysis failed");
-        }
-
-        setState((prev) => ({
-          ...prev,
-          ...data,
-          currentNode: "overhead",
-          progress: 80,
-        }));
-
-        // Return minimal response - UI updates via setState above
-        // This avoids lengthy LLM reformulation
-        return `✓ Analysis complete • Cost: $${data.unitCost?.toFixed(4)} • Review dashboard`;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Analysis failed";
-        setState((prev) => ({
-          ...prev,
-          error: errorMessage,
-          currentNode: "",
-          progress: 0,
-        }));
-        return `Error: ${errorMessage}. Please try again.`;
-      } finally {
-        setIsAnalyzing(false);
-      }
+      return new Promise<string>((resolve) => {
+        const params = new URLSearchParams({ productDescription });
+        if (aum) params.set("aum", String(aum));
+        
+        const eventSource = new EventSource(`/api/analyze/stream?${params}`);
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const { type, step, percent, details, data, message } = JSON.parse(event.data);
+            
+            if (type === "progress") {
+              setState((prev) => ({
+                ...prev,
+                currentNode: step,
+                progress: percent,
+              }));
+            } else if (type === "complete" && data) {
+              setState((prev) => ({
+                ...prev,
+                ...data,
+                currentNode: "overhead",
+                progress: 80,
+              }));
+              eventSource.close();
+              setIsAnalyzing(false);
+              resolve(`✓ Analysis complete • Cost: $${data.unitCost?.toFixed(4)} • Review dashboard`);
+            } else if (type === "error") {
+              setState((prev) => ({
+                ...prev,
+                error: message || "Analysis failed",
+                currentNode: "",
+                progress: 0,
+              }));
+              eventSource.close();
+              setIsAnalyzing(false);
+              resolve(`Error: ${message}. Please try again.`);
+            }
+          } catch (e) {
+            console.error("SSE parse error:", e);
+          }
+        };
+        
+        eventSource.onerror = () => {
+          eventSource.close();
+          setState((prev) => ({
+            ...prev,
+            error: "Connection lost",
+            currentNode: "",
+            progress: 0,
+          }));
+          setIsAnalyzing(false);
+          resolve("Error: Connection lost. Please try again.");
+        };
+      });
     },
   });
 

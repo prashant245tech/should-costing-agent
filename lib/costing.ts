@@ -1,7 +1,7 @@
 /**
  * Core costing logic - extracted for use by CopilotKit actions and API routes
  */
-import { complete, extractJSON, logProviderInfo } from "@/lib/llm";
+import { complete, completeWithStream, extractJSON, logProviderInfo } from "@/lib/llm";
 import { findMaterialPrice, searchSimilarProducts, saveHistoricalCost } from "@/lib/db";
 import {
   getPrompts,
@@ -251,6 +251,182 @@ export async function runAnalysis(
     unitCost: exWorksCostBreakdown.totalExWorks,
     currency: analysis.currency || "USD",
 
+    approvalStatus: "pending",
+  };
+}
+
+// Progress callback type for streaming updates
+export type ProgressCallback = (
+  step: string,
+  percent: number,
+  details?: string
+) => void | Promise<void>;
+
+/**
+ * Run full Ex-Works cost analysis with progress callbacks for streaming
+ */
+export async function runAnalysisWithProgress(
+  productDescription: string,
+  aum?: number,
+  onProgress?: ProgressCallback
+): Promise<AnalysisResult> {
+  const emit = async (step: string, percent: number, details?: string) => {
+    if (onProgress) {
+      await onProgress(step, percent, details);
+    }
+  };
+
+  // Build hierarchical category list for classification
+  const categoryList = buildCategoryListForClassification();
+
+  // STEP 1: Classification
+  await emit("Classifying product", 10, "Detecting product category...");
+  const defaultPrompts = getPrompts("default");
+
+  console.log("Step 1: Classifying product...");
+  const classifyResponse = await complete(
+    defaultPrompts.classifyPrompt!(productDescription, categoryList),
+    { maxTokens: 500 }
+  );
+
+  const classification = extractJSON<ClassificationResult>(classifyResponse, "object");
+  const detectedCategory = classification?.category || DEFAULT_CATEGORY_ID;
+  const detectedSubCategory = classification?.subCategory || "general";
+  const confidence = classification?.confidence || 0.5;
+
+  console.log(`Classified as: ${detectedCategory}/${detectedSubCategory} (${Math.round(confidence * 100)}% confidence)`);
+
+  // STEP 2: Load prompts
+  await emit("Loading prompts", 15, `Category: ${detectedCategory}`);
+  const prompts = await getPromptsAsync(detectedCategory, detectedSubCategory);
+  const categoryDef = CATEGORY_DEFINITIONS.find(c => c.id === detectedCategory);
+
+  console.log(`Using ${prompts.categoryName} prompts for detailed analysis...`);
+
+  // STEP 3: Full analysis with streaming progress
+  await emit("Running Ex-Works analysis", 20, "This may take 30-60 seconds...");
+  console.log("Step 2: Running detailed Ex-Works analysis...");
+  
+  const analysisResponse = await completeWithStream(
+    `${prompts.systemRole}\n\n${prompts.fullAnalysisPrompt(productDescription, categoryList, aum)}`,
+    async (partialText, tokenProgress) => {
+      // Map token progress (0-100) to our progress range (20-50%)
+      const mappedProgress = 20 + Math.round(tokenProgress * 0.30);
+      await emit("Analyzing...", mappedProgress, `${Math.round(partialText.length / 1000)}KB received`);
+    },
+    { maxTokens: 16000, expectedTokens: 8000 }
+  );
+
+  await emit("Processing analysis", 50, "Parsing component breakdown...");
+  const analysis = extractJSON<DetailedAnalysisResult>(analysisResponse, "object");
+
+  if (!analysis || !analysis.components || analysis.components.length === 0) {
+    throw new Error("Failed to parse analysis response");
+  }
+
+  // Override category with classification result
+  analysis.category = detectedCategory;
+  analysis.subCategory = detectedSubCategory;
+  analysis.confidence = confidence;
+  analysis.reasoning = classification?.reasoning || analysis.reasoning;
+
+  console.log(`Detected: ${categoryDef?.name || detectedCategory} (${Math.round(confidence * 100)}%)`);
+  console.log(`AUM: ${analysis.aum?.toLocaleString() || 'Not specified'}`);
+
+  // Normalize components
+  const components: ProductComponent[] = analysis.components.map((c) => ({
+    name: String(c.name || "Unknown"),
+    material: String(c.material || "unknown").toLowerCase(),
+    quantity: Number(c.quantity) || 0.001,
+    unit: String(c.unit || "kg").toLowerCase(),
+  }));
+
+  // STEP 4: Calculate material costs
+  await emit("Pricing materials", 60, `Processing ${components.length} components...`);
+  const { materialCosts, materialsTotal } = await calculateMaterialCosts(components, prompts);
+
+  await emit("Building cost breakdown", 80, "Calculating Ex-Works structure...");
+
+  // Calculate Ex-Works breakdown from percentages
+  const estimatedUnitCost = analysis.estimatedUnitCost || 1.00;
+  const costPercentages = analysis.costPercentages || {
+    rawMaterial: 0.45,
+    conversion: 0.15,
+    labour: 0.10,
+    packing: 0.10,
+    overhead: 0.10,
+    margin: 0.10
+  };
+
+  const actualRawMaterialCost = materialsTotal > 0 ? materialsTotal : estimatedUnitCost * costPercentages.rawMaterial;
+  const rawMaterialPercent = costPercentages.rawMaterial;
+  const totalFromMaterials = materialsTotal > 0 ? materialsTotal / rawMaterialPercent : estimatedUnitCost;
+
+  const conversionCost = totalFromMaterials * costPercentages.conversion;
+  const labourCost = totalFromMaterials * costPercentages.labour;
+  const packingCost = totalFromMaterials * costPercentages.packing;
+  const overheadCost = totalFromMaterials * costPercentages.overhead;
+  const marginCost = totalFromMaterials * costPercentages.margin;
+
+  await emit("Finalizing breakdown", 90, "Building Ex-Works structure...");
+
+  const exWorksCostBreakdown: ExWorksCostBreakdown = {
+    rawMaterial: actualRawMaterialCost,
+    conversion: conversionCost,
+    labour: labourCost,
+    packing: packingCost,
+    overhead: overheadCost,
+    margin: marginCost,
+    totalExWorks: 0,
+
+    rawMaterialDetails: {
+      total: actualRawMaterialCost,
+      components: materialCosts,
+      description: `Direct material costs for ${components.length} ingredients`,
+      negotiationPoints: ["Commodity price fluctuations", "Volume discounts", "Alternative suppliers"]
+    },
+
+    conversionDetails: analysis.conversionDetails ? scaleBreakdown(analysis.conversionDetails, conversionCost) : undefined,
+    labourDetails: analysis.labourDetails ? scaleLabourBreakdown(analysis.labourDetails, labourCost) : undefined,
+    packingDetails: analysis.packingDetails ? scaleBreakdown(analysis.packingDetails, packingCost) : undefined,
+    overheadDetails: analysis.overheadDetails ? scaleOverheadBreakdown(analysis.overheadDetails, overheadCost) : undefined,
+    marginAnalysis: analysis.marginAnalysis ? {
+      ...analysis.marginAnalysis,
+      total: marginCost,
+      percentage: costPercentages.margin
+    } : undefined,
+  };
+
+  exWorksCostBreakdown.totalExWorks =
+    exWorksCostBreakdown.rawMaterial +
+    exWorksCostBreakdown.conversion +
+    exWorksCostBreakdown.labour +
+    exWorksCostBreakdown.packing +
+    exWorksCostBreakdown.overhead +
+    exWorksCostBreakdown.margin;
+
+  await emit("Complete", 100, `Unit cost: $${exWorksCostBreakdown.totalExWorks.toFixed(4)}`);
+
+  const detectionMessage = analysis.subCategory
+    ? `Detected: **${categoryDef?.name || analysis.category}** → **${analysis.subCategory}** (${Math.round((analysis.confidence || 0.8) * 100)}% confidence). ${analysis.reasoning || ''}`
+    : `Detected: **${categoryDef?.name || analysis.category}** (${Math.round((analysis.confidence || 0.8) * 100)}% confidence). ${analysis.reasoning || ''}`;
+
+  return {
+    success: true,
+    category: analysis.category,
+    categoryName: categoryDef?.name || analysis.category,
+    subCategory: analysis.subCategory || "",
+    detectionMessage,
+    productDescription,
+    analysisContext: analysis.analysisContext || productDescription,
+    aum: analysis.aum,
+    aumReasoning: analysis.aumReasoning,
+    components,
+    materialCosts,
+    exWorksCostBreakdown,
+    costPercentages,
+    unitCost: exWorksCostBreakdown.totalExWorks,
+    currency: analysis.currency || "USD",
     approvalStatus: "pending",
   };
 }
