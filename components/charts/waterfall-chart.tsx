@@ -111,14 +111,14 @@ export function CostWaterfallChart({
     };
 
     return (
-        <Card className="h-full">
+        <Card className="h-full flex flex-col">
             <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                     {title}
                 </CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className="h-[300px] w-full">
+            <CardContent className="flex-1 min-h-0">
+                <div className="h-full w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                             data={chartData}

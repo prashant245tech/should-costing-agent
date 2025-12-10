@@ -1,9 +1,48 @@
-import { CostingPrompts, ProductComponent, CostData } from "./types";
+/**
+ * Base/Default Prompts
+ *
+ * These are the fallback prompts used when no category-specific prompts exist.
+ * All category prompts should extend or override these defaults.
+ */
 
-export const defaultPrompts: CostingPrompts = {
+import { CostingPrompts, ProductComponent, CostData } from "../types";
+
+export const prompts: CostingPrompts = {
   categoryName: "General Manufacturing",
 
   systemRole: "You are an expert procurement cost analyst specializing in Ex-Works should-cost modeling for vendor negotiations.",
+
+  /**
+   * Lightweight classification prompt - identifies product category only
+   * Used as first step before detailed analysis
+   */
+  classifyPrompt: (productDescription: string, categoryList: string) => `
+You are a product classification expert. Your task is to classify a product into the most appropriate category and subcategory.
+
+Product to classify: "${productDescription}"
+
+Available Categories and Subcategories:
+${categoryList}
+
+INSTRUCTIONS:
+1. Analyze the product description carefully
+2. Choose the MOST SPECIFIC category and subcategory that matches
+3. If the product doesn't clearly fit any category, use "default" as the category
+4. Provide a confidence score (0.0 to 1.0) based on how well the product matches
+
+Return ONLY a JSON object in this exact format (no other text):
+{
+  "category": "food-beverage",
+  "subCategory": "baked-goods",
+  "confidence": 0.95,
+  "reasoning": "Cookies are baked goods in the food & beverage category"
+}
+
+IMPORTANT:
+- Use exact category IDs from the list (e.g., "food-beverage", not "Food & Beverage")
+- Use exact subcategory IDs from the list (e.g., "baked-goods", not "Baked Goods")
+- If uncertain, use category "default" with subCategory "general"
+- Keep reasoning brief (one sentence)`,
 
   fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => `
 You are an expert procurement cost analyst. Create an Ex-Works should-cost model for vendor negotiations.
@@ -29,15 +68,17 @@ Return a SINGLE JSON object with this EXACT structure:
   "subCategory": "baked-goods",
   "confidence": 0.90,
   "reasoning": "Brief explanation",
-  
+
+  "analysisContext": "A comprehensive 2-3 sentence summary describing: key raw materials, manufacturing process overview, packaging type, food-safety/quality considerations, typical unit size, and shelf life expectations.",
+
   "aum": 1000000,
   "aumReasoning": "Standard annual volume for this product type",
-  
+
   "components": [
     {"name": "Flour", "material": "wheat flour", "quantity": 0.030, "unit": "kg"},
     {"name": "Sugar", "material": "granulated sugar", "quantity": 0.015, "unit": "kg"}
   ],
-  
+
   "costPercentages": {
     "rawMaterial": 0.45,
     "conversion": 0.15,
@@ -46,7 +87,7 @@ Return a SINGLE JSON object with this EXACT structure:
     "overhead": 0.12,
     "margin": 0.10
   },
-  
+
   "estimatedUnitCost": 0.15,
   "currency": "USD",
 
@@ -161,3 +202,6 @@ Create a procurement-focused markdown report with:
 Also return a JSON object at the end:
 {"costSavingOpportunities": ["suggestion 1", "suggestion 2", "suggestion 3"], "targetPrice": 0.12, "negotiationRange": {"min": 0.10, "max": 0.15}}`,
 };
+
+// Re-export for backward compatibility
+export const defaultPrompts = prompts;

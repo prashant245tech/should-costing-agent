@@ -28,6 +28,7 @@ type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_revision";
 
 interface CostingState {
   productDescription: string;
+  analysisContext?: string;
   category: string;
   categoryName: string;
   subCategory: string;
@@ -61,6 +62,7 @@ interface CostingState {
 
 const initialState: CostingState = {
   productDescription: "",
+  analysisContext: undefined,
   category: "",
   categoryName: "",
   subCategory: "",
@@ -304,7 +306,9 @@ Please review the breakdown and click "Approve" to generate the final report.`;
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <CopilotSidebar
-        className="h-full"
+        defaultOpen={true}
+        clickOutsideToClose={true}
+        className="flex-1 w-full"
         labels={{
           title: "Should Costing Agent",
           initial: "Hi! I'm your procurement cost analyst. Describe a product to get an Ex-Works cost breakdown for vendor negotiations.\n\nTry: \"Oreo cookie\" or \"Cotton t-shirt\"",

@@ -89,3 +89,13 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
+
+/* Fix Copilot Toggle Positioning */
+.copilotKitButton {
+  position: fixed !important;
+  top: 1.5rem !important;
+  right: 1.5rem !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 100 !important;
+}

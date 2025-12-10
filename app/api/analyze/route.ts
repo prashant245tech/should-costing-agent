@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { complete, extractJSON, logProviderInfo } from "@/lib/llm";
 import { findMaterialPrice, searchSimilarProducts, saveHistoricalCost } from "@/lib/db";
-import { getPrompts, CATEGORY_DEFINITIONS } from "@/lib/prompts";
+import {
+  getPrompts,
+  getPromptsAsync,
+  buildCategoryListForClassification,
+  CATEGORY_DEFINITIONS,
+  DEFAULT_CATEGORY_ID,
+} from "@/lib/prompts";
 import {
   CostingPrompts,
   ProductComponent,
@@ -13,7 +19,8 @@ import {
   LabourBreakdown,
   PackingBreakdown,
   OverheadBreakdown,
-  MarginBreakdown
+  MarginBreakdown,
+  ClassificationResult,
 } from "@/lib/prompts/types";
 
 // Extended analysis result with detailed breakdowns
@@ -46,17 +53,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Build category list for prompt
-    const categoryList = CATEGORY_DEFINITIONS
-      .map(c => `- ${c.id}: ${c.name} (${c.description})`)
-      .join('\n');
+    // Build hierarchical category list for classification
+    const categoryList = buildCategoryListForClassification();
 
-    // Use default prompts for initial analysis
+    // STEP 1: Lightweight classification to identify product category
     const defaultPrompts = getPrompts("default");
 
-    console.log("Making Ex-Works analysis call...");
+    console.log("Step 1: Classifying product...");
+    const classifyResponse = await complete(
+      defaultPrompts.classifyPrompt!(productDescription, categoryList),
+      { maxTokens: 500 }
+    );
+
+    const classification = extractJSON<ClassificationResult>(classifyResponse, "object");
+
+    // Use default category if classification fails
+    const detectedCategory = classification?.category || DEFAULT_CATEGORY_ID;
+    const detectedSubCategory = classification?.subCategory || "general";
+    const confidence = classification?.confidence || 0.5;
+
+    console.log(`Classified as: ${detectedCategory}/${detectedSubCategory} (${Math.round(confidence * 100)}% confidence)`);
+
+    // STEP 2: Load category-specific prompts
+    const prompts = await getPromptsAsync(detectedCategory, detectedSubCategory);
+    const categoryDef = CATEGORY_DEFINITIONS.find(c => c.id === detectedCategory);
+
+    console.log(`Using ${prompts.categoryName} prompts for detailed analysis...`);
+
+    // STEP 3: Full analysis with category-specific prompts
+    console.log("Step 2: Running detailed Ex-Works analysis...");
     const analysisResponse = await complete(
-      `${defaultPrompts.systemRole}\n\n${defaultPrompts.fullAnalysisPrompt(productDescription, categoryList, aum)}`,
+      `${prompts.systemRole}\n\n${prompts.fullAnalysisPrompt(productDescription, categoryList, aum)}`,
       { maxTokens: 16000 }
     );
 
@@ -66,11 +93,13 @@ export async function POST(req: NextRequest) {
       throw new Error("Failed to parse analysis response");
     }
 
-    // Get category-specific prompts
-    const prompts = getPrompts(analysis.category, analysis.subCategory);
-    const categoryDef = CATEGORY_DEFINITIONS.find(c => c.id === analysis.category);
+    // Override category with our classification result (more reliable)
+    analysis.category = detectedCategory;
+    analysis.subCategory = detectedSubCategory;
+    analysis.confidence = confidence;
+    analysis.reasoning = classification?.reasoning || analysis.reasoning;
 
-    console.log(`Detected: ${categoryDef?.name || analysis.category} (${Math.round((analysis.confidence || 0.8) * 100)}%)`);
+    console.log(`Detected: ${categoryDef?.name || detectedCategory} (${Math.round(confidence * 100)}%)`);
     console.log(`AUM: ${analysis.aum?.toLocaleString() || 'Not specified'}`);
 
     // Normalize components
@@ -158,6 +187,9 @@ export async function POST(req: NextRequest) {
       subCategory: analysis.subCategory || "",
       detectionMessage,
       productDescription,
+
+      // LLM-generated analysis context for display
+      analysisContext: analysis.analysisContext || productDescription,
 
       // AUM
       aum: analysis.aum,
