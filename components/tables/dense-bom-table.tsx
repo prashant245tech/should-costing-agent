@@ -30,7 +30,7 @@ export function DenseBOMTable({ items, totalCost }: DenseBOMTableProps) {
     const sortedItems = [...items].sort((a, b) => b.totalCost - a.totalCost);
 
     return (
-        <Card className="h-full border">
+        <Card className="h-full w-full border">
             <CardHeader className="py-3 px-4 border-b bg-muted/40">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -49,8 +49,10 @@ export function DenseBOMTable({ items, totalCost }: DenseBOMTableProps) {
                             <TableHead className="w-[20%] text-xs font-semibold h-9">MATERIAL SPEC</TableHead>
                             <TableHead className="w-[15%] text-right text-xs font-semibold h-9">QTY</TableHead>
                             <TableHead className="w-[15%] text-right text-xs font-semibold h-9">PRICE</TableHead>
-                            <TableHead className="w-[15%] text-right text-xs font-semibold h-9 cursor-pointer hover:bg-muted/80 flex items-center justify-end gap-1">
-                                TOTAL <ArrowUpDown className="h-3 w-3" />
+                            <TableHead className="w-[15%] text-right text-xs font-semibold h-9 cursor-pointer hover:bg-muted/80">
+                                <div className="flex items-center justify-end gap-1">
+                                    TOTAL <ArrowUpDown className="h-3 w-3" />
+                                </div>
                             </TableHead>
                             <TableHead className="w-[5%] text-right text-xs font-semibold h-9">%</TableHead>
                         </TableRow>

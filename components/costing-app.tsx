@@ -6,6 +6,7 @@ import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { CostingDashboard } from "@/components/costing-dashboard";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   ExWorksCostBreakdown,
   CostPercentages,
@@ -84,7 +85,7 @@ const initialState: CostingState = {
 };
 
 function CostingAppContent() {
-  const [state, setState] = useState<CostingState>(initialState);
+  const [state, setState, clearStoredState] = usePersistedState<CostingState>(initialState);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Make state readable to CopilotKit
@@ -258,7 +259,7 @@ function CostingAppContent() {
     followUp: false,  // Skip second LLM call
     parameters: [],
     handler: async () => {
-      setState(initialState);
+      clearStoredState(); // Clears localStorage and resets state
       return "✓ Reset complete";
     },
   });
@@ -324,22 +325,33 @@ function CostingAppContent() {
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <CopilotSidebar
         defaultOpen={true}
-        clickOutsideToClose={true}
+        clickOutsideToClose={false}
         className="flex-1 w-full"
         labels={{
           title: "Should Costing Agent",
           initial: "Hi! I'm your procurement cost analyst. Describe a product to get an Ex-Works cost breakdown for vendor negotiations.\n\nTry: \"Oreo cookie\" or \"Cotton t-shirt\"",
         }}
       >
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-5xl mx-auto">
-            <header className="mb-6">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Should Costing Dashboard
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Ex-Works cost analysis for procurement negotiations
-              </p>
+        <main className="flex-1 p-6 md:p-8 overflow-y-scroll min-h-full">
+          <div className="w-full max-w-[1600px] mx-auto">
+            <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Should Costing Dashboard
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Ex-Works cost analysis for procurement negotiations
+                </p>
+              </div>
+
+              {state.progress > 0 && (
+                <button
+                  onClick={() => clearStoredState()}
+                  className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 hover:text-red-700 dark:bg-gray-800 dark:text-red-400 dark:border-red-900 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Reset Analysis
+                </button>
+              )}
             </header>
 
             <CostingDashboard

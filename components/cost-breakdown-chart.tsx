@@ -40,35 +40,26 @@ interface CostBreakdownChartProps {
   overheadTotal: number;
 }
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b"];
-
-// Colors for 6 Ex-Works components
-const EX_WORKS_COLORS = [
-  "#3b82f6", // Raw Material - Blue
-  "#8b5cf6", // Conversion - Purple
-  "#10b981", // Labour - Green
-  "#f59e0b", // Packing - Amber
-  "#ef4444", // Overhead - Red
-  "#6b7280", // Margin - Gray
-];
+import { EX_WORKS_COLORS_ARRAY, PIE_CHART_COLORS } from "@/lib/constants";
 
 export function ExWorksBreakdownChart({ breakdown }: ExWorksBreakdownChartProps) {
   const data = [
-    { name: "Raw Material", value: breakdown.rawMaterial, color: EX_WORKS_COLORS[0] },
-    { name: "Conversion", value: breakdown.conversion, color: EX_WORKS_COLORS[1] },
-    { name: "Labour", value: breakdown.labour, color: EX_WORKS_COLORS[2] },
-    { name: "Packing", value: breakdown.packing, color: EX_WORKS_COLORS[3] },
-    { name: "Overhead", value: breakdown.overhead, color: EX_WORKS_COLORS[4] },
-    { name: "Margin", value: breakdown.margin, color: EX_WORKS_COLORS[5] },
+    { name: "Raw Material", value: breakdown.rawMaterial, color: EX_WORKS_COLORS_ARRAY[0] },
+    { name: "Conversion", value: breakdown.conversion, color: EX_WORKS_COLORS_ARRAY[1] },
+    { name: "Labour", value: breakdown.labour, color: EX_WORKS_COLORS_ARRAY[2] },
+    { name: "Packing", value: breakdown.packing, color: EX_WORKS_COLORS_ARRAY[3] },
+    { name: "Overhead", value: breakdown.overhead, color: EX_WORKS_COLORS_ARRAY[4] },
+    { name: "Margin", value: breakdown.margin, color: EX_WORKS_COLORS_ARRAY[5] },
   ].filter((item) => item.value > 0);
 
   return (
     <div className="h-full">
       <CostWaterfallChart
         data={data}
-        title="Ex-Works Cost Structure"
+        title="Ex-Works Cost Structure (%)"
         currency="$"
         showPercentage={true}
+        layout="percentage"
       />
     </div>
   );
@@ -80,9 +71,9 @@ export function CostBreakdownPieChart({
   overheadTotal,
 }: CostBreakdownChartProps) {
   const data = [
-    { name: "Materials", value: materialsTotal, color: COLORS[0] },
-    { name: "Labor", value: laborTotal, color: COLORS[1] },
-    { name: "Overhead", value: overheadTotal, color: COLORS[2] },
+    { name: "Materials", value: materialsTotal, color: PIE_CHART_COLORS[0] },
+    { name: "Labor", value: laborTotal, color: PIE_CHART_COLORS[1] },
+    { name: "Overhead", value: overheadTotal, color: PIE_CHART_COLORS[2] },
   ].filter((item) => item.value > 0);
 
   const total = materialsTotal + laborTotal + overheadTotal;

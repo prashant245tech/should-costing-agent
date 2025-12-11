@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CostWaterfallChart } from "@/components/charts/waterfall-chart";
 import { DenseBOMTable } from "@/components/tables/dense-bom-table";
@@ -16,6 +17,7 @@ import {
   ProductComponent,
   MaterialCostItem
 } from "@/lib/prompts/types";
+import { CHART_COLORS } from "@/lib/constants";
 
 interface CostBreakdown {
   materialsTotal?: number;
@@ -148,14 +150,14 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     {
       name: "Raw Material",
       value: exWorksCostBreakdown.rawMaterial,
-      color: "#3b82f6",
+      color: CHART_COLORS.rawMaterial,
       description: exWorksCostBreakdown.rawMaterialDetails?.description,
       details: rawMaterialSubComponents as any // Cast because SubComponent type is inferred locally in detail panel but keys match
     },
     {
       name: "Packaging",
       value: exWorksCostBreakdown.packing,
-      color: "#f59e0b",
+      color: CHART_COLORS.packing,
       description: exWorksCostBreakdown.packingDetails?.description,
       details: exWorksCostBreakdown.packingDetails?.subComponents,
       negotiationPoints: exWorksCostBreakdown.packingDetails?.negotiationPoints
@@ -163,7 +165,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     {
       name: "Conversion",
       value: exWorksCostBreakdown.conversion,
-      color: "#8b5cf6",
+      color: CHART_COLORS.conversion,
       description: exWorksCostBreakdown.conversionDetails?.description,
       details: exWorksCostBreakdown.conversionDetails?.subComponents,
       negotiationPoints: exWorksCostBreakdown.conversionDetails?.negotiationPoints
@@ -171,7 +173,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     {
       name: "Labor",
       value: exWorksCostBreakdown.labour,
-      color: "#10b981",
+      color: CHART_COLORS.labor,
       description: exWorksCostBreakdown.labourDetails?.description,
       details: exWorksCostBreakdown.labourDetails?.subComponents,
       negotiationPoints: exWorksCostBreakdown.labourDetails?.negotiationPoints
@@ -179,7 +181,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     {
       name: "Overhead",
       value: exWorksCostBreakdown.overhead,
-      color: "#ef4444",
+      color: CHART_COLORS.overhead,
       description: exWorksCostBreakdown.overheadDetails?.description,
       details: exWorksCostBreakdown.overheadDetails?.subComponents,
       negotiationPoints: exWorksCostBreakdown.overheadDetails?.negotiationPoints
@@ -187,7 +189,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
     {
       name: "Margin",
       value: exWorksCostBreakdown.margin,
-      color: "#6b7280",
+      color: CHART_COLORS.margin,
       description: exWorksCostBreakdown.marginAnalysis?.reasoning,
       details: undefined,
       negotiationPoints: exWorksCostBreakdown.marginAnalysis?.reasoning ? [exWorksCostBreakdown.marginAnalysis.reasoning] : []
@@ -285,13 +287,13 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="p-2 hover:bg-muted rounded-full" title="Share Analysis">
+          <Button variant="ghost" size="icon" className="rounded-full" title="Share Analysis" aria-label="Share Analysis">
             <Share2 className="w-4 h-4 text-muted-foreground" />
-          </button>
-          <button className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium border rounded-md hover:bg-muted bg-white dark:bg-gray-800">
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2 bg-white dark:bg-gray-800" aria-label="Export Brief">
             <Download className="w-4 h-4" />
             Export Brief
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -322,7 +324,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </TabsList>
 
           {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4 mt-4">
+          <TabsContent value="overview" className="space-y-4 mt-4 w-full">
             {/* Product Context Widget */}
             <AnalysisContextWidget description={analysisContext || productDescription} />
 
@@ -335,8 +337,12 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={onReject} className="px-3 py-1.5 text-sm border rounded-md bg-white hover:bg-gray-50 text-red-600 border-red-200">Reject</button>
-                  <button onClick={onApprove} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium shadow-sm">Approve Model</button>
+                  <Button variant="outline" size="sm" onClick={onReject} className="hover:bg-red-50 text-red-600 border-red-200 hover:border-red-300">
+                    Reject
+                  </Button>
+                  <Button variant="default" size="sm" onClick={onApprove} className="bg-blue-600 hover:bg-blue-700">
+                    Approve Model
+                  </Button>
                 </div>
               </div>
             )}
@@ -353,7 +359,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </TabsContent>
 
           {/* Materials Tab (Excel Grid) */}
-          <TabsContent value="materials" className="mt-4">
+          <TabsContent value="materials" className="mt-4 w-full">
             <DenseBOMTable
               items={materialCosts}
               totalCost={materialCosts.reduce((sum, i) => sum + i.totalCost, 0)}
@@ -361,8 +367,8 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </TabsContent>
 
           {/* Waterfall Tab (Vertical Hero Layout) */}
-          <TabsContent value="waterfall" className="mt-4">
-            <div className="flex flex-col gap-6 h-[900px]">
+          <TabsContent value="waterfall" className="mt-4 w-full">
+            <div className="flex flex-col gap-6 h-[900px] w-full">
 
               {/* Top Section: Hero Chart (60%) */}
               <div className="h-[60%] w-full">
@@ -376,11 +382,11 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
               </div>
 
               {/* Bottom Section: Breakdown Panel (40%) */}
-              <div className="h-[40%] flex gap-6 min-h-0">
+              <div className="h-[40%] flex gap-6 min-h-0 w-full">
                 {selectedCategoryData ? (
                   <>
                     {/* Left Column: Cost Drivers Table (2/3) */}
-                    <Card className="w-2/3 flex flex-col overflow-hidden border-t-4" style={{ borderTopColor: selectedCategoryData.color }}>
+                    <Card className="flex-[2_1_0%] min-w-0 flex flex-col overflow-hidden border-t-4" style={{ borderTopColor: selectedCategoryData.color }}>
                       <CardHeader className="py-3 px-4 bg-muted/20 border-b">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -438,7 +444,7 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
                     </Card>
 
                     {/* Right Column: Negotiation Insight (1/3) */}
-                    <Card className="w-1/3 flex flex-col overflow-hidden">
+                    <Card className="flex-1 min-w-0 flex flex-col overflow-hidden">
                       <CardHeader className="py-3 px-4 bg-muted/20 border-b">
                         <CardTitle className="text-sm font-medium flex items-center gap-2">
                           <Target className="w-4 h-4 text-green-600" />
@@ -487,14 +493,14 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
           </TabsContent>
 
           {/* Report Tab */}
-          <TabsContent value="report" className="mt-4">
-            <Card>
+          <TabsContent value="report" className="mt-4 w-full">
+            <Card className="w-full">
               <CardHeader>
                 <CardTitle>Cost Structure Breakdown</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 {exWorksCostBreakdown && (
-                  <div className="border rounded-md overflow-hidden">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr className="border-b">
@@ -551,9 +557,9 @@ export function CostingDashboard({ state, onApprove, onReject }: CostingDashboar
                 <p className="text-sm text-green-700 dark:text-green-300">Analysis finalized and approved.</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium shadow-sm flex items-center gap-2">
+            <Button className="bg-green-600 hover:bg-green-700 gap-2">
               <Download className="w-4 h-4" /> Download PDF
-            </button>
+            </Button>
           </div>
 
           {/* Show Waterfall in Final Report too */}

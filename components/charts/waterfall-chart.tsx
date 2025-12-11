@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { CHART_COLORS } from "@/lib/constants";
 
 interface WaterfallChartProps {
     data: {
@@ -26,6 +27,7 @@ interface WaterfallChartProps {
     onBarClick?: (data: any) => void;
     selectedIndex?: number | null;
     showPercentage?: boolean;
+    layout?: "value" | "percentage";
 }
 
 export function CostWaterfallChart({
@@ -34,7 +36,8 @@ export function CostWaterfallChart({
     title = "Cost Build-up",
     onBarClick,
     selectedIndex,
-    showPercentage = false
+    showPercentage = false,
+    layout = "value"
 }: WaterfallChartProps) {
     // Transform data for waterfall
     // Each bar needs: name, start, end, value (for tooltip)
@@ -60,7 +63,7 @@ export function CostWaterfallChart({
             bottom: start,
             barSize: item.value,
             total: currentTotal,
-            color: item.color || "#3b82f6",
+            color: item.color || CHART_COLORS.rawMaterial,
             isTotal: false,
             originalIndex: index,
         };
@@ -74,7 +77,7 @@ export function CostWaterfallChart({
         bottom: 0,
         barSize: totalValue,
         total: totalValue,
-        color: "#0f172a", // Dark color for total
+        color: CHART_COLORS.total, // Dark color for total
         isTotal: true,
         originalIndex: -1,
     };
