@@ -186,6 +186,9 @@ export interface FullAnalysisResult {
     confidence: number;
     reasoning: string;
 
+    // LLM-generated product context for display
+    analysisContext?: string;
+
     // Product breakdown
     components: ProductComponent[];
 
@@ -250,6 +253,9 @@ export interface CostingPrompts {
     categoryName: string;
     systemRole: string;
 
+    // Classification prompt (lightweight, category detection only)
+    classifyPrompt?: (productDescription: string, categoryList: string) => string;
+
     // Ex-Works analysis prompt (returns full cost structure)
     fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => string;
 
@@ -263,4 +269,80 @@ export interface CostingPrompts {
     analysisPrompt?: (productDescription: string) => string;
     laborPrompt?: (args: { productDescription: string; components: ProductComponent[]; materialsTotal: number }) => string;
     overheadPrompt?: (productDescription: string) => string;
+}
+
+// ============================================================================
+// CATEGORY CONFIGURATION (for extensible prompt system)
+// ============================================================================
+
+/**
+ * Labor category definition for category-specific labor types
+ */
+export interface LaborCategory {
+    id: string;
+    name: string;
+    description: string;
+    defaultSkillLevel: "entry" | "intermediate" | "expert";
+}
+
+/**
+ * Category configuration - defines category-specific settings
+ * Used by the prompt registry to provide industry-specific defaults
+ */
+export interface CategoryConfig {
+    id: string;
+    name: string;
+    description: string;
+
+    // Labor categories specific to this industry
+    laborCategories?: LaborCategory[];
+
+    // Typical overhead range for this category
+    overheadRange?: {
+        min: number;   // e.g., 0.08
+        max: number;   // e.g., 0.15
+        typical: number;
+    };
+
+    // Common units for components in this category
+    commonUnits?: string[];
+
+    // Industry benchmarks for cost percentages
+    industryBenchmarks?: {
+        laborPercentage?: { min: number; max: number; typical: number };
+        rawMaterialPercentage?: { min: number; max: number; typical: number };
+        marginPercentage?: { min: number; max: number; typical: number };
+    };
+
+    // Any other category-specific metadata
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * Subcategory definition for hierarchical classification
+ */
+export interface SubcategoryDefinition {
+    id: string;
+    name: string;
+    examples: string;  // Comma-separated examples: "cookies, cakes, breads"
+}
+
+/**
+ * Category definition for UI display and classification
+ */
+export interface CategoryDefinition {
+    id: string;
+    name: string;
+    description: string;
+    subcategories?: SubcategoryDefinition[];
+}
+
+/**
+ * Classification result from the classify prompt
+ */
+export interface ClassificationResult {
+    category: string;
+    subCategory: string;
+    confidence: number;
+    reasoning?: string;
 }

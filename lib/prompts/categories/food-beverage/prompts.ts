@@ -1,11 +1,21 @@
-import { CostingPrompts, ProductComponent, CostData } from "../types";
+/**
+ * Food & Beverage Category Prompts
+ *
+ * Specialized prompts for food industry cost analysis including:
+ * - Recipe costing
+ * - Ingredient pricing
+ * - Food-specific labor benchmarks
+ * - Packaging for perishables
+ */
 
-export const foodPrompts: CostingPrompts = {
-    categoryName: "Food & Beverage",
+import { CostingPrompts, ProductComponent, CostData } from "../../types";
 
-    systemRole: "You are an expert food industry procurement analyst specializing in recipe costing and Ex-Works pricing for CPG/FMCG products.",
+export const prompts: CostingPrompts = {
+  categoryName: "Food & Beverage",
 
-    fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => `
+  systemRole: "You are an expert food industry procurement analyst specializing in recipe costing and Ex-Works pricing for CPG/FMCG products.",
+
+  fullAnalysisPrompt: (productDescription: string, categoryList: string, aum?: number) => `
 You are an expert food industry cost analyst. Create a DETAILED Ex-Works should-cost model for procurement negotiations.
 
 Product: "${productDescription}"
@@ -60,6 +70,8 @@ Return a SINGLE JSON object with DETAILED breakdowns:
   "subCategory": "cookies",
   "confidence": 0.95,
   "reasoning": "Baked goods with standard cookie production process",
+
+  "analysisContext": "Key raw materials: wheat flour, sugar, vegetable oil, cocoa powder. Manufacturing steps: mixing, forming, baking, cooling, cream filling. Packaging: primary tray/wrapper, retail carton. Food-safety/quality: HACCP compliance, batch testing. Typical single-serve: 30-40g cookie. Shelf life: 6-12 months ambient.",
 
   "aum": 50000000,
   "aumReasoning": "Major brand cookie - high volume production",
@@ -151,18 +163,19 @@ Return a SINGLE JSON object with DETAILED breakdowns:
 }
 
 CRITICAL FOR FOOD PRODUCTS:
-1. components: Ingredients per SINGLE UNIT (e.g., per cookie, not per package)
-2. Include ALL ingredients (flour, sugar, fats, leavening, flavorings, etc.)
-3. Labour should be 5-12% (food production is highly automated)
-4. costPercentages MUST sum to 1.00
-5. All *Details sub-components percentages should sum to 1.00 within their category
-6. Detailed costs should align with costPercentages (e.g., conversionDetails.total = estimatedUnitCost * costPercentages.conversion)
-7. marginAnalysis.reasoning MUST explain the margin based on brand strength, competition, and volume
-8. Include negotiationPoints for each category - these help procurement teams
+1. analysisContext: Provide a comprehensive summary with key raw materials, manufacturing steps, packaging, food-safety/quality considerations, typical unit size, and shelf life
+2. components: Ingredients per SINGLE UNIT (e.g., per cookie, not per package)
+3. Include ALL ingredients (flour, sugar, fats, leavening, flavorings, etc.)
+4. Labour should be 5-12% (food production is highly automated)
+5. costPercentages MUST sum to 1.00
+6. All *Details sub-components percentages should sum to 1.00 within their category
+7. Detailed costs should align with costPercentages (e.g., conversionDetails.total = estimatedUnitCost * costPercentages.conversion)
+8. marginAnalysis.reasoning MUST explain the margin based on brand strength, competition, and volume
+9. Include negotiationPoints for each category - these help procurement teams
 
 Return ONLY the JSON object.`,
 
-    materialPrompt: (unknownMaterials: ProductComponent[]) => `
+  materialPrompt: (unknownMaterials: ProductComponent[]) => `
 As a food industry cost analyst, estimate WHOLESALE commodity prices.
 
 Ingredients to price:
@@ -170,7 +183,7 @@ ${unknownMaterials.map((c) => `- "${c.name}" (${c.material}): ${c.quantity} ${c.
 
 WHOLESALE FOOD INGREDIENT BENCHMARKS:
 - Wheat Flour: $0.40-0.60/kg
-- Sugar: $0.50-0.80/kg  
+- Sugar: $0.50-0.80/kg
 - Vegetable Oil: $1.00-1.50/kg
 - Cocoa Powder: $3.00-5.00/kg
 - Butter: $4.00-6.00/kg
@@ -180,7 +193,7 @@ WHOLESALE FOOD INGREDIENT BENCHMARKS:
 Return JSON with ingredient names as keys:
 {"Wheat Flour": {"pricePerUnit": 0.50, "unit": "kg"}}`,
 
-    reportPrompt: (data: CostData, similarProducts: any[]) => `
+  reportPrompt: (data: CostData, similarProducts: any[]) => `
 Generate a Food Industry Ex-Works Should-Cost Analysis.
 
 **Product:** ${data.productDescription}

@@ -1,68 +1,64 @@
-import { CostingPrompts } from "./types";
-import { defaultPrompts } from "./defaults";
-import { foodPrompts } from "./food";
-
-// Registry Map
-// Keys can be "category" or "category/subcategory"
-const registry: Record<string, CostingPrompts> = {
-    "default": defaultPrompts,
-    "food": foodPrompts,
-    "food_beverage": foodPrompts,
-    "food___beverage": foodPrompts,
-    "packaging": defaultPrompts, // TODO: Add packaging-specific prompts
-    "apparel": defaultPrompts,   // TODO: Add apparel-specific prompts
-    "apparel___fashion": defaultPrompts,
-    "consumer_electronics": defaultPrompts, // TODO: Add electronics-specific prompts
-    "electronics": defaultPrompts,
-    "furniture": defaultPrompts, // TODO: Add furniture-specific prompts
-    "industrial": defaultPrompts,
-    "general_manufacturing": defaultPrompts,
-};
-
 /**
- * Category definitions with IDs for classification
+ * Prompt System - Public API
+ *
+ * This module provides a hierarchical, category-aware prompt system for
+ * Ex-Works cost analysis. Categories can override specific prompts while
+ * inheriting defaults from the base prompts.
+ *
+ * Usage:
+ *   import { getPrompts, CATEGORY_DEFINITIONS } from "@/lib/prompts";
+ *
+ *   const prompts = getPrompts("food-beverage");
+ *   const analysis = prompts.fullAnalysisPrompt(description, categoryList);
+ *
+ * To add a new category:
+ *   1. Create lib/prompts/categories/{category-id}/prompts.ts
+ *   2. Export `prompts` object with category-specific overrides
+ *   3. Optionally add config.ts for category settings
  */
-export const CATEGORY_DEFINITIONS = [
-    { id: "food-beverage", name: "Food & Beverage", description: "Food products, beverages, meals" },
-    { id: "apparel", name: "Apparel & Textiles", description: "Clothing, footwear, accessories" },
-    { id: "consumer-electronics", name: "Consumer Electronics", description: "Electronics, gadgets, devices" },
-    { id: "packaging", name: "Packaging", description: "Boxes, containers, packaging materials" },
-    { id: "furniture", name: "Furniture", description: "Furniture, fixtures" },
-    { id: "industrial", name: "Industrial/Manufacturing", description: "Industrial equipment, metal fabrication" },
-];
 
-/**
- * Standardized categories that the Classifier should map to.
- */
-export const SUPPORTED_CATEGORIES = CATEGORY_DEFINITIONS.map(c => c.id);
+// Re-export from registry (main API)
+export {
+  getPrompts,
+  getPromptsAsync,
+  getCategoryConfig,
+  getAvailableCategories,
+  clearPromptCache,
+  preloadPrompts,
+  buildCategoryListForClassification,
+  CATEGORY_DEFINITIONS,
+  SUPPORTED_CATEGORIES,
+  DEFAULT_CATEGORY_ID,
+} from "./registry";
 
-/**
- * Resolve the appropriate prompts for a given category and sub-category.
- * 
- * Logic:
- * 1. Try exact match "category/subCategory" (not yet implemented fully in registry keys but planned)
- * 2. Try category match (slugified)
- * 3. Fallback to default
- */
-export function getPrompts(category: string, subCategory?: string): CostingPrompts {
-    const normCategory = normalizeKey(category);
-    const normSubCategory = subCategory ? normalizeKey(subCategory) : "";
+// Re-export types
+export type {
+  CostingPrompts,
+  CategoryConfig,
+  CategoryDefinition,
+  SubcategoryDefinition,
+  ClassificationResult,
+  LaborCategory,
+  ProductComponent,
+  MaterialCostItem,
+  CostData,
+  ExWorksCostBreakdown,
+  CostPercentages,
+  FullAnalysisResult,
+  LaborCosts,
+  LaborEstimate,
+  LaborEstimates,
+  ConversionBreakdown,
+  LabourBreakdown,
+  PackingBreakdown,
+  OverheadBreakdown,
+  MarginBreakdown,
+  CostSubComponent,
+  IndustryType,
+} from "./types";
 
-    // 1. Specific Subcategory (Future proofing)
-    // if (subCategory && registry[`${normCategory}/${normSubCategory}`]) {
-    //   return registry[`${normCategory}/${normSubCategory}`];
-    // }
+// Re-export constants
+export { INDUSTRY_LABOR_BENCHMARKS } from "./types";
 
-    // 2. Category Match
-    if (registry[normCategory]) {
-        return registry[normCategory];
-    }
-
-    // 3. Fallback
-    console.warn(`Category '${category}' not found in registry. Using default prompts.`);
-    return defaultPrompts;
-}
-
-function normalizeKey(key: string): string {
-    return key.toLowerCase().replace(/[^a-z0-9]/g, "_");
-}
+// Re-export base prompts for direct access if needed
+export { prompts as defaultPrompts } from "./base/prompts";

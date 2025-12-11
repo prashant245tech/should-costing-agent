@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { CHART_COLORS } from "@/lib/constants";
 
 interface WaterfallChartProps {
     data: {
@@ -25,6 +26,8 @@ interface WaterfallChartProps {
     title?: string;
     onBarClick?: (data: any) => void;
     selectedIndex?: number | null;
+    showPercentage?: boolean;
+    layout?: "value" | "percentage";
 }
 
 export function CostWaterfallChart({
@@ -32,7 +35,9 @@ export function CostWaterfallChart({
     currency = "$",
     title = "Cost Build-up",
     onBarClick,
-    selectedIndex
+    selectedIndex,
+    showPercentage = false,
+    layout = "value"
 }: WaterfallChartProps) {
     // Transform data for waterfall
     // Each bar needs: name, start, end, value (for tooltip)
@@ -58,7 +63,7 @@ export function CostWaterfallChart({
             bottom: start,
             barSize: item.value,
             total: currentTotal,
-            color: item.color || "#3b82f6",
+            color: item.color || CHART_COLORS.rawMaterial,
             isTotal: false,
             originalIndex: index,
         };
@@ -72,7 +77,7 @@ export function CostWaterfallChart({
         bottom: 0,
         barSize: totalValue,
         total: totalValue,
-        color: "#0f172a", // Dark color for total
+        color: CHART_COLORS.total, // Dark color for total
         isTotal: true,
         originalIndex: -1,
     };
@@ -82,6 +87,8 @@ export function CostWaterfallChart({
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             const data = payload[1] ? payload[1].payload : payload[0].payload;
+            const percentage = ((data.value / totalValue) * 100).toFixed(1);
+            
             return (
                 <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border text-sm">
                     <p className="font-semibold mb-1">{data.name}</p>
@@ -90,6 +97,7 @@ export function CostWaterfallChart({
                             <span className="text-muted-foreground">Cost:</span>
                             <span className="font-mono font-medium">
                                 {currency}{data.value.toFixed(4)}
+                                {showPercentage && !data.isTotal && ` (${percentage}%)`}
                             </span>
                         </p>
                         {!data.isTotal && (
@@ -111,14 +119,14 @@ export function CostWaterfallChart({
     };
 
     return (
-        <Card className="h-full">
+        <Card className="h-full flex flex-col">
             <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                     {title}
                 </CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className="h-[300px] w-full">
+            <CardContent className="flex-1 min-h-0">
+                <div className="h-full w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                             data={chartData}

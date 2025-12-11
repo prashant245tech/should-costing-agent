@@ -70,7 +70,7 @@ export function OverviewGrid({
         : "0";
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
             {/* Unit Cost - Large Card */}
             <Card className="md:col-span-2 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-100 dark:border-blue-900">
                 <CardContent className="p-6 flex flex-col justify-between h-full">

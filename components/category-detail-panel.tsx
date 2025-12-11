@@ -43,8 +43,8 @@ export function CategoryDetailPanel({
     const sortedComponents = [...subComponentList].sort((a, b) => b.cost - a.cost);
 
     return (
-        <Card className="h-full border-l-4 shadow-sm" style={{ borderLeftColor: color }}>
-            <CardHeader className="pb-3">
+        <Card className="h-full border-l-4 shadow-sm flex flex-col" style={{ borderLeftColor: color }}>
+            <CardHeader className="pb-3 shrink-0">
                 <div className="flex justify-between items-start">
                     <div>
                         <CardTitle className="flex items-center gap-2 text-xl">
@@ -69,7 +69,7 @@ export function CategoryDetailPanel({
                 </div>
             </CardHeader>
 
-            <CardContent className="space-y-6 overflow-y-auto h-[400px] pr-2">
+            <CardContent className="space-y-6 overflow-y-auto flex-1 pr-2">
                 {/* Cost Drivers Table */}
                 {sortedComponents.length > 0 ? (
                     <div className="space-y-3">
