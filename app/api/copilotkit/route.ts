@@ -51,7 +51,7 @@ function createServiceAdapter(): OpenAIAdapter {
   console.log("[CopilotKit] Creating adapter with model:", model);
 
   return new OpenAIAdapter({
-    openai: createOpenAIClient(),
+    openai: createOpenAIClient() as any,
     model,
   });
 }
